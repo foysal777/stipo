@@ -1,7 +1,5 @@
 from django.apps import AppConfig
 from django.conf import settings
-
-from django.apps import AppConfig
 from django.db.models.signals import post_migrate
 
 
@@ -11,8 +9,20 @@ class AppConfig(AppConfig):
 
     def ready(self):
         print("preparing app")
-        from .models import SiteConfig
         from . import signals
-        settings.SITE_CONFIG = SiteConfig.objects.first()
+        self._load_site_config()
 
-    # def post_ready_callback(self, sender, **kwargs):
+    def _load_site_config(self):
+        """
+        Load SiteConfig from DB into settings.SITE_CONFIG.
+        Wrapped in try/except so it doesn't crash on a fresh DB
+        (before migrations have created the table).
+        """
+        from .models import SiteConfig
+        try:
+            settings.SITE_CONFIG = SiteConfig.objects.first()
+        except Exception:
+            # Table doesn't exist yet (first run before migrate)
+            # The CMD in Dockerfile runs migrate first, then gunicorn,
+            # so by the time gunicorn starts this will succeed.
+            settings.SITE_CONFIG = None
