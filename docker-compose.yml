@@ -1,6 +1,23 @@
-version: "3.9"
-
 services:
+  # ── PostgreSQL Database ────────────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    container_name: stepo_db
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── Django + Gunicorn ──────────────────────────────────────────────────────
   web:
     build: .
@@ -11,13 +28,13 @@ services:
     volumes:
       - reports_data:/app/reports
       - static_data:/app/staticfiles
-      - ./scholarships.xlsx:/app/scholarships.xlsx   # dataset file
-      - ./watermark.png:/app/watermark.png           # watermark asset
-      - ./db.sqlite3:/app/db.sqlite3                 # SQLite persistence
+      - ./scholarships.xlsx:/app/scholarships.xlsx
+      - ./watermark.png:/app/watermark.png
     expose:
       - "8000"
     depends_on:
-      - nginx
+      db:
+        condition: service_healthy
 
   # ── Nginx reverse proxy ────────────────────────────────────────────────────
   nginx:
@@ -30,8 +47,10 @@ services:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
       - static_data:/app/staticfiles:ro
       - reports_data:/app/reports:ro
-    # nginx starts first; web depends_on nginx so the network is ready
+    depends_on:
+      - web
 
 volumes:
+  postgres_data:
   reports_data:
   static_data:

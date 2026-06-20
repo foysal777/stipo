@@ -20,7 +20,7 @@ class ScholarshipApplicant(models.Model):
     email_verified = models.BooleanField(default=False)
     admin_verified = models.BooleanField(default=False)
     report_file = models.FileField(upload_to=generate_pdf_path, null=True)
-    otp = models.CharField(default=create_otp)
+    otp = models.CharField(max_length=6, default=create_otp)
     success_count = models.PositiveIntegerField(default=0)
 
     def refresh_otp(self):
@@ -102,17 +102,8 @@ class PreDefinedScholarship(models.Model):
         null=True
     )
 
-    subject = models.CharField(null=True, blank=True, choices=[
-        # educationLevels
+    subject = models.CharField(max_length=50, null=True, blank=True, choices=[
         ("always", "always"),
-        # ("primarySchool", "primarySchool"),
-        # ("secondarySchool", "secondarySchool"),
-        # ("postSecondary", "postSecondary"),
-        # ("university", "university"),
-        # ("master", "master"),
-        # ("phd", "phd"),
-
-        # upperSecondary
         ("socialSciences", "socialSciences"),
         ("economics", "economics"),
         ("naturalSciences", "naturalSciences"),
@@ -124,8 +115,6 @@ class PreDefinedScholarship(models.Model):
         ("salesService", "salesService"),
         ("childRecreation", "childRecreation"),
         ("other", "other"),
-
-        # universityPrograms
         ("engineering", "engineering"),
         ("medicine", "medicine"),
         ("cs", "cs"),
@@ -135,20 +124,9 @@ class PreDefinedScholarship(models.Model):
         ("environment", "environment"),
         ("design", "design"),
         ("biology", "biology"),
-
-        # masterPrograms
         ("publicHealth", "publicHealth"),
-        ("engineering", "engineering"),
         ("business", "business"),
-        ("cs", "cs"),
-        ("education", "education"),
-        ("environment", "environment"),
         ("lifeScience", "lifeScience"),
-        ("law", "law"),
-        ("design", "design"),
-        ("socialSciences", "socialSciences"),
-
-        # postSecondaryPrograms
         ("pharmacyTech", "pharmacyTech"),
         ("ambulance", "ambulance"),
         ("animalCare", "animalCare"),
@@ -185,12 +163,8 @@ class PreDefinedScholarship(models.Model):
 
 
 class PreDefinedScholarship_Sv(models.Model):
-    subject = models.CharField(choices=(
-    
-    ))
-    study_level = models.CharField(choices=(
-        
-    ))
+    subject = models.CharField(max_length=50, blank=True, null=True)
+    study_level = models.CharField(max_length=50, blank=True, null=True)
     organization_name = models.TextField()
     munucipality = models.TextField()
     category = models.TextField()
@@ -203,17 +177,3 @@ class PreDefinedScholarship_Sv(models.Model):
     organization_postal_code = models.TextField()
     organization_city = models.TextField()
     organization_county = models.TextField()
-    
-    # "Name": "Namn",
-    # "Municipality": "Kommun",
-    # "Category": "Kategori",
-    # "Purpose": "Ändamål",
-    # "Study Level": "Studienivå",
-    # "Email": "E-post",
-    # "Website": "Websida",
-    # "Phone": "Telefon",
-    # "Assets": "Tillgångar",
-    # "Main Address": "Huvudadress",
-    # "Postal Code": "Postnummer",
-    # "City": "Postort",
-    # "County": "Län",
