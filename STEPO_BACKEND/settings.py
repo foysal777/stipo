@@ -19,7 +19,13 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [
+    'stipendieportalen.se',
+    'www.stipendieportalen.se',
+    'app.stipendieportalen.se',
+    'localhost',
+    '127.0.0.1',
+]
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_HEADERS = (
     "accept",
@@ -32,7 +38,9 @@ CORS_ALLOW_HEADERS = (
 )
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://personally-liberal-scorpion.ngrok-free.app',
+    'https://stipendieportalen.se',
+    'https://www.stipendieportalen.se',
+    'https://app.stipendieportalen.se',
 ]
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'send.one.com')
