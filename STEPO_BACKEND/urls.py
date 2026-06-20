@@ -10,13 +10,12 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('app/', include("app.urls")),
+
+    # API Docs — available in all environments
+    path('schema/', SpectacularAPIView.as_view(renderer_classes=[JSONRenderer]), name='schema'),
+    path('docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
 ]
 
-
 if settings.DEBUG:
-    urlpatterns += [
-        path('schema/', SpectacularAPIView.as_view(renderer_classes=[JSONRenderer]), name='schema'),
-        path('docs/test/', SpectacularSwaggerView.as_view(), name='swagger-ui'),
-        path('docs/', SpectacularRedocView.as_view(), name='swagger-ui'),
-
-    ]+static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
