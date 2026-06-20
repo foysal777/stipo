@@ -1,0 +1,40 @@
+# Git
+.git
+.gitignore
+
+# Python cache
+__pycache__
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Environment secrets — NEVER bake into image
+.env
+
+# Local dev / test files
+*.sqlite3
+test.py
+test2.py
+main.py
+
+# Reports (mounted as volume)
+reports/
+
+# IDE / OS
+.vscode/
+.idea/
+*.DS_Store
+Thumbs.db
+
+# uv lock (not needed inside image)
+uv.lock
+pyproject.toml
+
+# Node (if any)
+node_modules/
