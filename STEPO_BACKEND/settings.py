@@ -166,8 +166,21 @@ WATERMARK_PATH = (BASE_DIR/'watermark.png').__str__()
 
 # Check if the directory exists
 if not os.path.exists(REPORT_DIR):
-    # Create the directory
     os.makedirs(REPORT_DIR)
     print(f"Directory '{REPORT_DIR}' created.")
 else:
     print(f"Directory '{REPORT_DIR}' already exists.")
+
+# ── Local development override ──────────────────────────────────────────────
+# Set DJANGO_LOCAL_DEV=1 in your terminal to use SQLite locally
+# without needing Docker/PostgreSQL running.
+# Example: export DJANGO_LOCAL_DEV=1 && python manage.py runserver
+if os.environ.get('DJANGO_LOCAL_DEV'):
+    DEBUG = True
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+    print("🔧 LOCAL DEV MODE — using SQLite")
