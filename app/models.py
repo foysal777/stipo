@@ -5,7 +5,7 @@ import random
 import uuid
 
 
-def create_otp(length: int = 4):
+def create_otp(length: int = 6):
     return ''.join(random.choices('0123456789', k=length))
 
 def generate_pdf_path(instance, file_name):

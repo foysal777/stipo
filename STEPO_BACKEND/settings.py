@@ -192,3 +192,7 @@ if os.environ.get('DJANGO_LOCAL_DEV'):
         }
     }
     print("🔧 LOCAL DEV MODE — using SQLite")
+
+
+
+# docker compose up -d --build && docker exec -it stepo_web python manage.py migrate && docker exec -it stepo_web python manage.py collectstatic --noinput

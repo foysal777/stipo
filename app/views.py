@@ -193,6 +193,35 @@ def build_report_for_application(application):
 
     return len(report_data[:10 - len(predefined_scholarships)]) + len(predefined_scholarships)
 
+def get_otp_email_content(otp, language='en'):
+    if language == 'sv':
+        subject = "Din verifieringskod"
+        html_message = f"""
+        <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
+            <h2 style="color: #333;">Verifieringskod</h2>
+            <p style="font-size: 16px; color: #555;">Tack för din ansökan! Använd koden nedan för att verifiera din e-postadress.</p>
+            <div style="font-size: 36px; font-weight: bold; margin: 20px auto; padding: 15px; background-color: #f4f4f4; border: 1px solid #ddd; border-radius: 8px; display: inline-block; letter-spacing: 5px; color: #000;">
+                {otp}
+            </div>
+            <p style="font-size: 14px; color: #888;">Om du inte begärde detta, vänligen ignorera detta e-postmeddelande.</p>
+        </div>
+        """
+        message = f"Här är din OTP: {otp}"
+    else:
+        subject = "Your Verification Code"
+        html_message = f"""
+        <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
+            <h2 style="color: #333;">Verification Code</h2>
+            <p style="font-size: 16px; color: #555;">Thank you for your application! Please use the code below to verify your email address.</p>
+            <div style="font-size: 36px; font-weight: bold; margin: 20px auto; padding: 15px; background-color: #f4f4f4; border: 1px solid #ddd; border-radius: 8px; display: inline-block; letter-spacing: 5px; color: #000;">
+                {otp}
+            </div>
+            <p style="font-size: 14px; color: #888;">If you didn't request this, please ignore this email.</p>
+        </div>
+        """
+        message = f"Here is your OTP: {otp}"
+    return subject, message, html_message
+
 @api_view(['post'])
 def submit_application(request):
     SITE_CONFIG = settings.SITE_CONFIG
@@ -215,10 +244,14 @@ def submit_application(request):
     application.admin_verified = bool(SITE_CONFIG and not SITE_CONFIG.admin_check)
     application.email_verified = False
     print("DEBUG ADMIN VER...: ", application.admin_verified)
+    
+    language = application.form_data.get('language', 'en')
+    subject, message, html_message = get_otp_email_content(application.otp, language)
+    
     send_mail(
-        subject="Application submitted",
-        message=f"plz use the otp: {application.otp}",
-        html_message="",
+        subject=subject,
+        message=message,
+        html_message=html_message,
         from_email=settings.EMAIL_HOST_USER,
         recipient_list=[application.email]
     )
@@ -241,10 +274,14 @@ def submit_application(request):
 def send_verification_code(request, email):
     # email = request.data.get('email')
     application = get_object_or_404(ScholarshipApplicant, email=email)
+    
+    language = application.form_data.get('language', 'en')
+    subject, message, html_message = get_otp_email_content(application.otp, language)
+    
     send_mail(
-        subject="Application submitted",
-        message=f"here is your otp: {application.otp}",
-        html_message=f"here is your otp: {application.otp}",
+        subject=subject,
+        message=message,
+        html_message=html_message,
         from_email=settings.EMAIL_HOST_USER,
         recipient_list=[email]
     )
