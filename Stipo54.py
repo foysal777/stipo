@@ -1887,5 +1887,5 @@ def format_scholarship_json(scholarship_list, output_language="en"):
                     else v
                 )
         formatted_list.append(entry)
-    return json.dumps(formatted_list, indent=4, ensure_ascii=False)
+    return formatted_list
 
