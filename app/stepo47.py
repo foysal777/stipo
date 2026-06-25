@@ -12,7 +12,6 @@ from pinecone import Pinecone, ServerlessSpec
 from openai import OpenAI
 from tiktoken import get_encoding
 from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
 from dotenv import load_dotenv
 import numpy as np
 
@@ -20,17 +19,17 @@ from django.conf import settings
 
 load_dotenv()
 
-# Use environment variables only — keys must be set in .env
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "My api key")
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY", "my_api_key")
 
 
 if not OPENAI_API_KEY or not PINECONE_API_KEY:
     raise ValueError("OPENAI_API_KEY or PINECONE_API_KEY not found in environment variables")
 
 print("Environment variables loaded successfully")
-print(f"Using OPENAI_API_KEY: {OPENAI_API_KEY[:5]}...{OPENAI_API_KEY[-5:]}") # Print partial key for debugging
-print(f"Using PINECONE_API_KEY: {PINECONE_API_KEY[:5]}...{PINECONE_API_KEY[-5:]}") # Print partial key for debugging
+print(f"Using OPENAI_API_KEY: {OPENAI_API_KEY[:5]}...{OPENAI_API_KEY[-5:]}") 
+print(f"Using PINECONE_API_KEY: {PINECONE_API_KEY[:5]}...{PINECONE_API_KEY[-5:]}") 
 
 
 
@@ -218,12 +217,7 @@ def find_scholarships_v2(
       "subject": subject or "",
       "gender": gender or "",
       "context": (
-           # """
-           #  Du är en intelligent stipendierekommendationsassistent.
-           #  Ditt uppdrag är att hitta och rangordna stipendier som exakt matchar användarens uppgifter.
-           #  Prioritet: Ämne ➜ Utbildningsnivå ➜ Syfte ➜ Kön.
-           #  Uteslut stipendier som inte matchar ämne eller nivå när dessa anges.
-           #  """
+           
            """
             Du är en intelligent stipendierekommendationsassistent.
             Ditt uppdrag är att hitta och rangordna stipendier som exakt matchar användarens uppgifter.
@@ -420,7 +414,7 @@ def format_scholarship_json(scholarship_list: List[Dict[str, Any]], output_langu
         formatted_list.append(formatted_entry)
  
     return formatted_list
-    # return json.dumps(formatted_list, indent=4, ensure_ascii=False)
+   
 
 
 def llm_filter_scholarships(
@@ -441,15 +435,7 @@ def llm_filter_scholarships(
     if debug:
         print(f"\n[LLM FILTER] Received {len(scholarships)} scholarships for LLM filtering.\n")
 
-    # STRICT RELEVANCE RULES:
-    # 1. Study Level → HARD MATCH (must match user level or be obviously suitable)
-    # 2. Subject → Must be semantically aligned; related fields are acceptable.
-    # 3. Gender Rules:
-    #      - female user → only female/open scholarships allowed
-    #      - male user → only male/open scholarships allowed
-    # 4. Purpose → Must closely match or support user's stated purpose.
-    # 5. Include at least 8–10 scholarships if possible.
-    # Build strict user context
+    
     user_context = f"""
     USER REQUIREMENTS:
     • Purpose: {user_purpose}
@@ -483,7 +469,7 @@ def llm_filter_scholarships(
 
     combined_text = "\n".join(scholarship_blocks)
 
-    # ==== FINAL PROMPT STRUCTURE ====
+   
     prompt = f"""
     Evaluate the following scholarships for relevance:
 
@@ -559,27 +545,6 @@ def llm_filter_scholarships(
 
 
 
-# if __name__ == "__main__":
-#     results = find_scholarships_v2(
-#         user_purpose="Interested in studying medicine & disease related subjects for my bachelor degree",
-#         subject="medicine & health science",
-#         user_type="individual",
-#         municipality="Stockholm",
-#         municipality_filter=True,
-#         study_level="university,Masters",
-#         gender="female",
-#         language="en",
-#         top_k=30,
-#         debug=True,
-#         use_llm_rerank=True
-#     )
-
-#     formatted = format_scholarship_json(results, output_language="en")
-#     print(formatted)
-
-# DATA_PATH = "scholarships.xlsx"
-# df = pd.read_excel(DATA_PATH, engine="openpyxl").fillna("").astype(str)
-# print(f"Dataset loaded successfully with {len(df)} rows")
 
 
 INDEX_NAME = "scholarships-index-latest"
@@ -1118,7 +1083,6 @@ from pinecone import Pinecone, ServerlessSpec
 from openai import OpenAI
 from tiktoken import get_encoding
 from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
 from dotenv import load_dotenv
 import numpy as np
 

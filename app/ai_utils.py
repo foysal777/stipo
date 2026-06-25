@@ -8,13 +8,9 @@ from deep_translator import GoogleTranslator
 
 from concurrent.futures import ThreadPoolExecutor
 
-from dotenv import load_dotenv
-
 # from openai import OpenAI
 import openai
-
-load_dotenv()
-
+ 
 # ======================================
 
 COLUMN_MAP = {
@@ -49,13 +45,12 @@ translators = {
 
 }
  
-# 🔑 Set OpenAI API Key from .env
+from dotenv import load_dotenv
+load_dotenv()
 
+# 🔑 Set OpenAI API Key
 # client = OpenAI(api_key="my_openai_key")
 openai.api_key = os.getenv("OPENAI_API_KEY")
-
-if not openai.api_key:
-    raise ValueError("OPENAI_API_KEY not found in environment. Check your .env file.")
 
 MODEL_ID = "gpt-5-nano"
 

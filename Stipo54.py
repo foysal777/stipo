@@ -10,19 +10,23 @@ from fuzzywuzzy import fuzz
 from dotenv import load_dotenv
 import os
 
+
 load_dotenv()
+
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
 
-if not OPENAI_API_KEY or not PINECONE_API_KEY:
-    raise ValueError("OPENAI_API_KEY or PINECONE_API_KEY not found in environment. Check your .env file.")
 
+if not OPENAI_API_KEY or not PINECONE_API_KEY:
+    raise ValueError("API keys are missing! Please check your .env file.")
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 pc = Pinecone(api_key=PINECONE_API_KEY)
 
-INDEX_NAME = "scholarships-index-latest"
+
+DEFAULT_INDEX_NAME = "scholarships-index-latest"
+INDEX_NAME = DEFAULT_INDEX_NAME
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536
 DEFAULT_TOP_K = 200
@@ -30,7 +34,481 @@ MAX_CANDIDATES_FOR_LLM = 200
 MIN_RESULTS = 10
 
 enc = get_encoding("cl100k_base")
+
+_BOX_CLEAN = re.compile(
+    r'[\u25A0\u25AA\u25AB\u25FB\u25FC\u25FD\u25FE' 
+    r'\u2500-\u257F' 
+    r'\u2580-\u259F'  
+    r'\u2600-\u26FF'  
+    r'\u2B1B\u2B1C\u2B50\u2B55'  
+    r'\u00AD\u200B\u200C\u200D\uFEFF'  
+    r'\u2028\u2029'  
+    r'\u061C\u200E\u200F'  
+    r'\x00-\x08\x0B\x0C\x0E-\x1F' 
+    r'\x7F-\x9F'  
+    r'\u0300-\u036F]'  
+)
+
+
+_ESCAPE_SEQ = re.compile(r'_x[0-9A-Fa-f]{4}_')
+
+_BOX_REPLACE = {
+    '\u2018': "'", '\u2019': "'",
+    '\u201C': '"', '\u201D': '"',
+    '\u2013': '-', '\u2014': '-',
+    '\u2026': '...', '\u00AB': '"',
+    '\u00BB': '"', '\u00A0': ' ',
+    '\u2022': '-',
+}
+
+def _clean_raw(text):
+    if not isinstance(text, str):
+        return text
+    
+   
+    text = _ESCAPE_SEQ.sub('', text)
+    
+   
+    text = _BOX_CLEAN.sub('', text)
+    
+    
+    for char, rep in _BOX_REPLACE.items():
+        text = text.replace(char, rep)
+    
+    
+    text = re.sub(r'\s+', ' ', text).strip()
+    
+    return text
+
+
+def get_active_index():
+    """Get the active Pinecone index, with fallback to hardcoded default"""
+    global INDEX_NAME
+    try:
+        from django.conf import settings
+        if settings.SITE_CONFIG:
+            INDEX_NAME = settings.SITE_CONFIG.get_active_dataset_index_name()
+    except Exception as e:
+        print(f"Warning: Could not load INDEX_NAME from SiteConfig, using default: {e}")
+        INDEX_NAME = DEFAULT_INDEX_NAME
+    return pc.Index(INDEX_NAME)
+
 index = pc.Index(INDEX_NAME)
+MUNICIPALITY_NAME_MAP = {
+
+    "ale": "Ale",
+    "alingsas": "Alingsås",
+    "alingsås": "Alingsås",
+    "alvesta": "Alvesta",
+    "aneby": "Aneby",
+    "arboga": "Arboga",
+    "arjeplog": "Arjeplog",
+    "arvidsjaur": "Arvidsjaur",
+    "arvika": "Arvika",
+    "askersund": "Askersund",
+    "avesta": "Avesta",
+    "bengtsfors": "Bengtsfors",
+    "berg": "Berg",
+    "bjurholm": "Bjurholm",
+    "bjuv": "Bjuv",
+    "boden": "Boden",
+    "bollebygd": "Bollebygd",
+    "bollnas": "Bollnäs",
+    "bollnäs": "Bollnäs",
+    "borgholm": "Borgholm",
+    "borlange": "Borlänge",
+    "borlänge": "Borlänge",
+    "boras": "Borås",
+    "borås": "Borås",
+    "botkyrka": "Botkyrka",
+    "boxholm": "Boxholm",
+    "bromolla": "Bromölla",
+    "bromölla": "Bromölla",
+    "bracke": "Bräcke",
+    "bräcke": "Bräcke",
+    "burlov": "Burlöv",
+    "burlöv": "Burlöv",
+    "bastad": "Båstad",
+    "båstad": "Båstad",
+    "dals-ed": "Dals-Ed",
+    "danderyd": "Danderyd",
+    "degerfors": "Degerfors",
+    "dorotea": "Dorotea",
+    "eda": "Eda",
+    "ekero": "Ekerö",
+    "ekerö": "Ekerö",
+    "eksjo": "Eksjö",
+    "eksjö": "Eksjö",
+    "emmaboda": "Emmaboda",
+    "enkoping": "Enköping",
+    "enköping": "Enköping",
+    "eskilstuna": "Eskilstuna",
+    "eslov": "Eslöv",
+    "eslöv": "Eslöv",
+    "essunga": "Essunga",
+    "fagersta": "Fagersta",
+    "falkenberg": "Falkenberg",
+    "falkoping": "Falköping",
+    "falköping": "Falköping",
+    "falun": "Falun",
+    "filipstad": "Filipstad",
+    "finspang": "Finspång",
+    "finspång": "Finspång",
+    "flen": "Flen",
+    "forshaga": "Forshaga",
+    "fargelanda": "Färgelanda",
+    "färgelanda": "Färgelanda",
+    "gagnef": "Gagnef",
+    "gislaved": "Gislaved",
+    "gnesta": "Gnesta",
+    "gnosjo": "Gnosjö",
+    "gnosjö": "Gnosjö",
+    "gotland": "Gotland",
+    "grums": "Grums",
+    "grastorp": "Grästorp",
+    "grästorp": "Grästorp",
+    "gullspang": "Gullspång",
+    "gullspång": "Gullspång",
+    "gallivare": "Gällivare",
+    "gällivare": "Gällivare",
+    "gavle": "Gävle",
+    "gävle": "Gävle",
+    "gotene": "Götene",
+    "götene": "Götene",
+    "gothenburg": "Göteborg",
+    "goteborg": "Göteborg",
+    "göteborg": "Göteborg",
+    #"habo": "Habo",
+    "hagfors": "Hagfors",
+    "hallsberg": "Hallsberg",
+    "hallstahammar": "Hallstahammar",
+    "halmstad": "Halmstad",
+    "hammaro": "Hammarö",
+    "hammarö": "Hammarö",
+    "haninge": "Haninge",
+    "haparanda": "Haparanda",
+    "heby": "Heby",
+    "hedemora": "Hedemora",
+    "helsingborg": "Helsingborg",
+    "herrljunga": "Herrljunga",
+    "hjo": "Hjo",
+    "hofors": "Hofors",
+    "huddinge": "Huddinge",
+    "hudiksvall": "Hudiksvall",
+    "hultsfred": "Hultsfred",
+    "hylte": "Hylte",
+    "habo": "Habo", 
+    "håbo": "Håbo", 
+    "hallefors": "Hällefors",
+    "hällefors": "Hällefors",
+    "harjedalen": "Härjedalen",
+    "härjedalen": "Härjedalen",
+    "harnosand": "Härnösand",
+    "härnösand": "Härnösand",
+    "harryda": "Härryda",
+    "härryda": "Härryda",
+    "hassleholm": "Hässleholm",
+    "hässleholm": "Hässleholm",
+    "hoganas": "Höganäs",
+    "höganäs": "Höganäs",
+    "hogsby": "Högsby",
+    "högsby": "Högsby",
+    "horby": "Hörby",
+    "hörby": "Hörby",
+    "hoor": "Höör",
+    "höör": "Höör",
+    "jokkmokk": "Jokkmokk",
+    "jarfalla": "Järfälla",
+    "järfälla": "Järfälla",
+    "jonkoping": "Jönköping",
+    "jönköping": "Jönköping",
+    "kalix": "Kalix",
+    "kalmar": "Kalmar",
+    "karlsborg": "Karlsborg",
+    "karlshamn": "Karlshamn",
+    "karlskoga": "Karlskoga",
+    "karlskrona": "Karlskrona",
+    "karlstad": "Karlstad",
+    "katrineholm": "Katrineholm",
+    "kil": "Kil",
+    "kinda": "Kinda",
+    "kiruna": "Kiruna",
+    "klippan": "Klippan",
+    "knivsta": "Knivsta",
+    "kramfors": "Kramfors",
+    "kristianstad": "Kristianstad",
+    "kristinehamn": "Kristinehamn",
+    "krokom": "Krokom",
+    "kumla": "Kumla",
+    "kungsbacka": "Kungsbacka",
+    "kungsor": "Kungsör",
+    "kungsör": "Kungsör",
+    "kungalv": "Kungälv",
+    "kungälv": "Kungälv",
+    "kavlinge": "Kävlinge",
+    "kävlinge": "Kävlinge",
+    "koping": "Köping",
+    "köping": "Köping",
+    "laholm": "Laholm",
+    "laxa": "Laxå",
+    "laxå": "Laxå",
+    "lekeberg": "Lekeberg",
+    "leksand": "Leksand",
+    "lerum": "Lerum",
+    "lessebo": "Lessebo",
+    "lidingo": "Lidingö",
+    "lidingö": "Lidingö",
+    "lidkoping": "Lidköping",
+    "lidköping": "Lidköping",
+    "lilla edet": "Lilla Edet",
+    "lindesberg": "Lindesberg",
+    "linkoping": "Linköping",
+    "linköping": "Linköping",
+    "ljungby": "Ljungby",
+    "ljusdal": "Ljusdal",
+    "ljusnarsberg": "Ljusnarsberg",
+    "lomma": "Lomma",
+    "ludvika": "Ludvika",
+    "lulea": "Luleå",
+    "luleå": "Luleå",
+    "lund": "Lund",
+    "lycksele": "Lycksele",
+    "lysekil": "Lysekil",
+    "malmo": "Malmö",
+    "malmö": "Malmö",
+    "malung-salen": "Malung-Sälen",
+    "malung-sälen": "Malung-Sälen",
+    "mala": "Malå",
+    "malå": "Malå",
+    "mariestad": "Mariestad",
+    "mark": "Mark",
+    "markaryd": "Markaryd",
+    "mellerud": "Mellerud",
+    "mjolby": "Mjölby",
+    "mjölby": "Mjölby",
+    "mora": "Mora",
+    "motala": "Motala",
+    "munkedal": "Munkedal",
+    "munkfors": "Munkfors",
+    "molndal": "Mölndal",
+    "mölndal": "Mölndal",
+    "monsteras": "Mönsterås",
+    "mönsterås": "Mönsterås",
+    "morbylanga": "Mörbylånga",
+    "mörbylånga": "Mörbylånga",
+    "nacka": "Nacka",
+    "nora": "Nora",
+    "norberg": "Norberg",
+    "nordanstig": "Nordanstig",
+    "nordmaling": "Nordmaling",
+    "norrkoping": "Norrköping",
+    "norrköping": "Norrköping",
+    "norrtalje": "Norrtälje",
+    "norrtälje": "Norrtälje",
+    "norsjo": "Norsjö",
+    "norsjö": "Norsjö",
+    "nybro": "Nybro",
+    "nykvarn": "Nykvarn",
+    "nykoping": "Nyköping",
+    "nyköping": "Nyköping",
+    "nynashamn": "Nynäshamn",
+    "nynäshamn": "Nynäshamn",
+    "nassjo": "Nässjö",
+    "nässjö": "Nässjö",
+    "ockelbo": "Ockelbo",
+    "olofstrom": "Olofström",
+    "olofström": "Olofström",
+    "orsa": "Orsa",
+    "orust": "Orust",
+    "osby": "Osby",
+    "oskarshamn": "Oskarshamn",
+    "ovanaker": "Ovanåker",
+    "ovanåker": "Ovanåker",
+    "oxelosund": "Oxelösund",
+    "oxelösund": "Oxelösund",
+    "pajala": "Pajala",
+    "partille": "Partille",
+    "perstorp": "Perstorp",
+    "pitea": "Piteå",
+    "piteå": "Piteå",
+    "ragunda": "Ragunda",
+    "robertsfors": "Robertsfors",
+    "ronneby": "Ronneby",
+    "rattvik": "Rättvik",
+    "rättvik": "Rättvik",
+    "sala": "Sala",
+    "salem": "Salem",
+    "sandviken": "Sandviken",
+    "sigtuna": "Sigtuna",
+    "simrishamn": "Simrishamn",
+    "sjobo": "Sjöbo",
+    "sjöbo": "Sjöbo",
+    "skara": "Skara",
+    "skelleftea": "Skellefteå",
+    "skellefteå": "Skellefteå",
+    "skinnskatteberg": "Skinnskatteberg",
+    "skurup": "Skurup",
+    "skovde": "Skövde",
+    "skövde": "Skövde",
+    "smedjebacken": "Smedjebacken",
+    "solleftea": "Sollefteå",
+    "sollefteå": "Sollefteå",
+    "sollentuna": "Sollentuna",
+    "solna": "Solna",
+    "sorsele": "Sorsele",
+    "sotenas": "Sotenäs",
+    "sotenäs": "Sotenäs",
+    "staffanstorp": "Staffanstorp",
+    "stenungsund": "Stenungsund",
+    "stockholm": "Stockholm",
+    "storfors": "Storfors",
+    "storuman": "Storuman",
+    "strangnas": "Strängnäs",
+    "strängnäs": "Strängnäs",
+    "stromstad": "Strömstad",
+    "strömstad": "Strömstad",
+    "stromsund": "Strömsund",
+    "strömsund": "Strömsund",
+    "sundbyberg": "Sundbyberg",
+    "sundsvall": "Sundsvall",
+    "sunne": "Sunne",
+    "surahammar": "Surahammar",
+    "svalov": "Svalöv",
+    "svalöv": "Svalöv",
+    "svedala": "Svedala",
+    "svenljunga": "Svenljunga",
+    "saffle": "Säffle",
+    "säffle": "Säffle",
+    "sater": "Säter",
+    "säter": "Säter",
+    "savsjo": "Sävsjö",
+    "sävsjö": "Sävsjö",
+    "solvesborg": "Sölvesborg",
+    "sölvesborg": "Sölvesborg",
+    "tanum": "Tanum",
+    "tibro": "Tibro",
+    "tidaholm": "Tidaholm",
+    "tierp": "Tierp",
+    "timra": "Timrå",
+    "timrå": "Timrå",
+    "tingsryd": "Tingsryd",
+    "tjorn": "Tjörn",
+    "tjörn": "Tjörn",
+    "tomelilla": "Tomelilla",
+    "torsby": "Torsby",
+    "torsas": "Torsås",
+    "torsås": "Torsås",
+    "tranemo": "Tranemo",
+    "tranas": "Tranås",
+    "tranås": "Tranås",
+    "trelleborg": "Trelleborg",
+    "trollhattan": "Trollhättan",
+    "trollhättan": "Trollhättan",
+    "trosa": "Trosa",
+    "tyreso": "Tyresö",
+    "tyresö": "Tyresö",
+    "taby": "Täby",
+    "täby": "Täby",
+    "toreboda": "Töreboda",
+    "töreboda": "Töreboda",
+    "uddevalla": "Uddevalla",
+    "ulricehamn": "Ulricehamn",
+    "umea": "Umeå",
+    "umeå": "Umeå",
+    "upplands-bro": "Upplands-Bro",
+    "upplands vasby": "Upplands Väsby",
+    "upplands väsby": "Upplands Väsby",
+    "uppsala": "Uppsala",
+    "uppvidinge": "Uppvidinge",
+    "vadstena": "Vadstena",
+    "vaggeryd": "Vaggeryd",
+    "valdemarsvik": "Valdemarsvik",
+    "vallentuna": "Vallentuna",
+    "vansbro": "Vansbro",
+    "vara": "Vara",
+    "varberg": "Varberg",
+    "vaxholm": "Vaxholm",
+    "vellinge": "Vellinge",
+    "vetlanda": "Vetlanda",
+    "vilhelmina": "Vilhelmina",
+    "vimmerby": "Vimmerby",
+    "vindeln": "Vindeln",
+    "vingaker": "Vingåker",
+    "vingåker": "Vingåker",
+    "vanersborg": "Vänersborg",
+    "vänersborg": "Vänersborg",
+    "vannas": "Vännäs",
+    "vännäs": "Vännäs",
+    "vasteras": "Västerås",
+    "västerås": "Västerås",
+    "vaxjo": "Växjö",
+    "växjö": "Växjö",
+    "vargarda": "Vårgårda",
+    "vårgårda": "Vårgårda",
+    "ydre": "Ydre",
+    "ystad": "Ystad",
+    "amal": "Åmål",
+    "åmål": "Åmål",
+    "ange": "Ånge",
+    "ånge": "Ånge",
+    "are": "Åre",
+    "åre": "Åre",
+    "arjang": "Årjäng",
+    "årjäng": "Årjäng",
+    "asele": "Åsele",
+    "åsele": "Åsele",
+    "astorp": "Åstorp",
+    "åstorp": "Åstorp",
+    "atvidaberg": "Åtvidaberg",
+    "åtvidaberg": "Åtvidaberg",
+    "almhult": "Älmhult",
+    "älmhult": "Älmhult",
+    "alvdalen": "Älvdalen",
+    "älvdalen": "Älvdalen",
+    "alvkarleby": "Älvkarleby",
+    "älvkarleby": "Älvkarleby",
+    "alvsbyn": "Älvsbyn",
+    "älvsbyn": "Älvsbyn",
+    "angelholm": "Ängelholm",
+    "ängelholm": "Ängelholm",
+    "ockero": "Öckerö",
+    "öckerö": "Öckerö",
+    "odeshog": "Ödeshög",
+    "ödeshög": "Ödeshög",
+    "orebro": "Örebro",
+    "örebro": "Örebro",
+    "orkelljunga": "Örkelljunga",
+    "örkelljunga": "Örkelljunga",
+    "ornskoldsvik": "Örnsköldsvik",
+    "örnsköldsvik": "Örnsköldsvik",
+    "ostersund": "Östersund",
+    "östersund": "Östersund",
+    "osteraker": "Österåker",
+    "österåker": "Österåker",
+    "osthammar": "Östhammar",
+    "östhammar": "Östhammar",
+    "ostra goinge": "Östra Göinge",
+    "östra göinge": "Östra Göinge",
+    "landskrona": "Landskrona", 
+    "mullsjo": "Mullsjö", 
+    "mullsjö": "Mullsjö", 
+    "varmdo": "Värmdö", 
+    "värmdö": "Värmdö", 
+    "varnamo": "Värnamo", 
+    "värnamo": "Värnamo", 
+    "vastervik": "Västervik", 
+    "västervik": "Västervik", 
+    "overkalix": "Överkalix", 
+    "överkalix": "Överkalix", 
+    "overtornea": "Övertorneå", 
+    "övertorneå": "Övertorneå", 
+    "sodertalje": "Södertälje", 
+    "södertälje": "Södertälje", 
+    "soderkoping": "Söderköping", 
+    "söderköping": "Söderköping", 
+    "soderhamn": "Söderhamn", 
+    "söderhamn": "Söderhamn",
+}
 FIELD_MAP_SV = {
     "Name": "Namn",
     "Purpose": "Ändamål",
@@ -91,7 +569,6 @@ LAW_TERMS = [
     "juridiska fakultet", "juridiska fakulteten",
     "juridisk utbildning", "juristutbildning",
     "law student", "law faculty",
-    # Commercial / trade law terms (Alexander feedback — handelsrätt case)
     "handelsrätt", "handelsrättens", "handelsrättslig",
     "köprätt", "kontraktsrätt",
     "bolags rätt", "bolagsrätt", "associationsrätt",
@@ -156,6 +633,11 @@ NON_TECH_DOMAIN_TERMS = [
     "medicin", "medicine", "musik", "music", "konstnärlig", "artistic",
     "jordbruk", "agriculture", "lantbruk", "teater", "theatre",
     "dans", "dance", "opera", "juridik", "law", "legal",
+    
+    "finansiell matematik", "financial mathematics",
+    "industriell ekonomi", "industrial economics",
+    "teknisk ekonomi",  
+    "ekonomi och teknik",
 ]
 
 
@@ -615,6 +1097,17 @@ def contains_any_stem(text: str, terms: List[str], min_stem_len: int = 6) -> boo
             if stem in t:
                 return True
     return False
+def resolve_municipality(municipality: str) -> str:
+    """
+    Maps any municipality input — English name, Swedish name,
+    any casing — to the exact Swedish value stored in Pinecone.
+    Returns the original string unchanged if no mapping found,
+    so existing correct Swedish inputs are never broken.
+    """
+    if not municipality:
+        return municipality
+    key = municipality.strip().lower()
+    return MUNICIPALITY_NAME_MAP.get(key, municipality.strip())
 
 
 def match_tech_terms_word_boundary(text: str, terms: List[str]) -> List[str]:
@@ -1011,15 +1504,21 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
     name = normalize_text(str(sch.get("Name", "")))
     user_domain = get_user_domain(user_purpose)
 
+    # MASTER DOMAIN SAFE HARBOR — only exit early if scholarship also has
+    # direct scholarship language. Institutional funds have domain terms
+    # but never contain stipendium/bidrag/ansökan etc.
     if user_domain == "law" and is_law_relevant(excl_text):
-        return False, ""
+        if contains_any(excl_text, STRONG_DIRECT_SCHOLARSHIP_TERMS):
+            return False, ""
     if user_domain == "business" and contains_any(excl_text, BUSINESS_TERMS):
-        return False, ""
+        if contains_any(excl_text, STRONG_DIRECT_SCHOLARSHIP_TERMS):
+            return False, ""
     if user_domain == "technology" and contains_any(excl_text, TECHNOLOGY_TERMS):
-        return False, ""
+        if contains_any(excl_text, STRONG_DIRECT_SCHOLARSHIP_TERMS):
+            return False, ""
     if user_domain == "medical" and contains_any(excl_text, MEDICAL_TERMS):
-        return False, ""
-
+        if contains_any(excl_text, STRONG_DIRECT_SCHOLARSHIP_TERMS):
+            return False, ""
 
     if user_domain == "law":
 
@@ -1029,18 +1528,15 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
             "samhällsvetenskaplig och teknisk",
         ]
         if not contains_any(excl_text, tech_cross_domain_safe):
-
             strong_tech_matches = match_tech_terms_word_boundary(excl_text, STRONG_TECH_SINGLE_MATCH_TERMS)
             if strong_tech_matches:
                 return True, f"strong tech/engineering domain for law user (matched: {strong_tech_matches[:3]})"
 
-        # Tier 2 — general tech terms, require 2+ matches
         tech_general_matches = get_matched_terms(excl_text, TECHNOLOGY_TERMS)
         if len(tech_general_matches) >= 2:
             if not contains_any(excl_text, LAW_TERMS):
                 return True, f"tech/engineering domain for law user ({len(tech_general_matches)} matches: {tech_general_matches[:3]})"
 
-        # Medical explicit check
         medical_matches = get_matched_terms(excl_text, MEDICAL_EXPLICIT_TERMS)
         if medical_matches:
             if not contains_any(excl_text, LAW_TERMS):
@@ -1069,10 +1565,16 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
             if not contains_any(excl_text, TECHNOLOGY_TERMS):
                 return True, f"explicit medical domain for technology user (matched: {medical_matches[:5]})"
 
+    # ============================================================
+    # CHECK 1: Institution Support (Rule 2)
+    # ============================================================
     is_inst, inst_reason = _is_institution_support(sch, user_purpose)
     if is_inst:
         return True, inst_reason
 
+    # ============================================================
+    # CHECK 2: Wrong Educational Level (Rule 4)
+    # ============================================================
     below_university_only_terms = [
         "elev i grundskolan", "grundskolan",
         "grundskoleelev", "grundskoleelever",
@@ -1083,7 +1585,6 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
         "läroverket", "läroverk",
         "abiturient",
     ]
-
     name_school_patterns = [
         "skolfond", "skolas stipendiestiftelse", "skolas samfond",
         "skolans stipendie", "skolans fond",
@@ -1112,25 +1613,29 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
             matched = get_matched_terms(name, name_school_patterns)
             return True, f"below university level only (school name pattern: {matched})"
 
-
     if contains_any(excl_text, gymnasium_only_terms):
         if not contains_any(excl_text, university_pathway_terms):
             matched = get_matched_terms(excl_text, gymnasium_only_terms)
             return True, f"gymnasium only with no university pathway (matched: {matched})"
 
+    # ============================================================
+    # CHECK 2.5: Entrepreneurship Support Exclusion
+    # ============================================================
     user_text = normalize_text(user_purpose)
     if not contains_any(user_text, ["entrepren", "startup", "drivhus", "inkubat"]):
         if contains_any(excl_text, ENTREPRENEURSHIP_SUPPORT_TERMS):
             matched = get_matched_terms(excl_text, ENTREPRENEURSHIP_SUPPORT_TERMS)
             return True, f"entrepreneurship support (matched: {matched})"
 
+    # ============================================================
+    # CHECK 3: Domain mismatch — STANDARD PATH
+    # ============================================================
     has_scholarship_terms = contains_any(excl_text, STRONG_DIRECT_SCHOLARSHIP_TERMS)
 
+    # LAW USER
     if user_domain == "law":
-
         is_domain_scholarship = is_law_relevant(excl_text)
         if not is_domain_scholarship:
-
             non_law_matches = get_matched_terms(excl_text, NON_LAW_DOMAIN_TERMS)
             if len(non_law_matches) >= 2:
                 matched = get_matched_terms(excl_text, NON_LAW_DOMAIN_TERMS)
@@ -1153,6 +1658,7 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
                 matched = get_matched_terms(excl_text, off_topic_single_terms)
                 return True, f"off-topic subject for law user (matched: {matched[:3]})"
 
+    # BUSINESS USER
     if user_domain == "business":
         if contains_any(excl_text, LAW_TERMS) and not contains_any(excl_text, BUSINESS_TERMS):
             if _is_domain_specific(excl_text, LAW_TERMS):
@@ -1169,6 +1675,7 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
                     matched = get_matched_terms(excl_text, NON_BUSINESS_DOMAIN_TERMS)
                     return True, f"non-business domain mismatch - primary domain (matched: {matched})"
 
+    # TECHNOLOGY USER
     if user_domain == "technology":
         if contains_any(excl_text, NON_TECH_DOMAIN_TERMS) and not contains_any(excl_text, TECHNOLOGY_TERMS):
             if _is_domain_specific(excl_text, NON_TECH_DOMAIN_TERMS):
@@ -1176,6 +1683,7 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
                     matched = get_matched_terms(excl_text, NON_TECH_DOMAIN_TERMS)
                     return True, f"non-tech domain mismatch (matched: {matched})"
 
+    # MEDICAL USER
     if user_domain == "medical":
         non_med_explicit = [
             "juridik", "juridisk", "juridiska", "affärsjuridik",
@@ -1203,6 +1711,7 @@ def should_exclude_entity_type(sch: Dict, user_purpose: str) -> Tuple[bool, str]
     return False, ""
 
 
+
 def should_exclude_study_level_mismatch(sch: Dict, user_purpose: str) -> Tuple[bool, str]:
     full_text = combined_scholarship_text(sch)
     purpose = scholarship_purpose_text(sch)
@@ -1213,8 +1722,9 @@ def should_exclude_study_level_mismatch(sch: Dict, user_purpose: str) -> Tuple[b
     _is_research_user = is_research_user(user_purpose)
 
     if is_undergrad_user and classification == "research":
-        if is_domain_match(excl_text, user_purpose):
-            
+    
+        purpose_only = scholarship_purpose_text(sch)
+        if is_domain_match(purpose_only, user_purpose):
             return False, ""
 
         # Non-domain research scholarship for undergrad user
@@ -1231,7 +1741,8 @@ def should_exclude_study_level_mismatch(sch: Dict, user_purpose: str) -> Tuple[b
         return True, f"research-only scholarship for undergrad user (classification: research)"
 
     if _is_research_user and classification == "student":
-        if is_domain_match(excl_text, user_purpose):
+      
+        if is_domain_match(purpose, user_purpose):  
             return False, ""
         if is_faculty_wide_scholarship(full_text):
             return False, ""
@@ -1250,6 +1761,47 @@ def should_exclude_study_level_mismatch(sch: Dict, user_purpose: str) -> Tuple[b
             return True, f"undergrad-only scholarship for research user (matched: {matched})"
 
         return False, ""
+
+    return False, ""
+
+def should_exclude_gender_mismatch(sch: Dict, gender: str) -> Tuple[bool, str]:
+    if not gender:
+        return False, ""
+
+    excl_text = _exclusion_purpose_text(sch)
+
+    FEMALE_ONLY_TERMS = [
+        "kvinnlig", "kvinnliga", "kvinna", "kvinnor",
+        "för kvinnor", "only for women", "female only",
+        "damer", "damernas",
+    ]
+    MALE_ONLY_TERMS = [
+        "manlig", "manliga", "för män", "för man",
+        "only for men", "male only",
+        "herrar", "herrarna",
+    ]
+
+    # Normalize gender to English equivalents (handle Swedish: "Kvinna"→"female", "Man"→"male")
+    gender_lower = gender.lower()
+    if gender_lower in ["kvinna", "female", "woman", "f"]:
+        is_female = True
+        is_male = False
+    elif gender_lower in ["man", "male", "m"]:
+        is_male = True
+        is_female = False
+    else:
+        # Unknown gender value - don't exclude
+        return False, ""
+
+    if is_male:
+        matched = get_matched_terms(excl_text, FEMALE_ONLY_TERMS)
+        if matched:
+            return True, f"female-only scholarship for male user (matched: {matched})"
+
+    elif is_female:
+        matched = get_matched_terms(excl_text, MALE_ONLY_TERMS)
+        if matched:
+            return True, f"male-only scholarship for female user (matched: {matched})"
 
     return False, ""
 
@@ -1282,8 +1834,14 @@ def compute_entity_bonus(sch: Dict, user_purpose: str) -> float:
         bonus += 0.25
     if contains_any(user_purpose, BUSINESS_TERMS) and contains_any(text, BUSINESS_TERMS):
         bonus += 0.20
-    if contains_any(user_purpose, TECHNOLOGY_TERMS) and contains_any(text, TECHNOLOGY_TERMS):
-        bonus += 0.20
+    if contains_any(user_purpose, TECHNOLOGY_TERMS):
+        purpose_only = scholarship_purpose_text(sch)
+        if contains_any(purpose_only, TECHNOLOGY_TERMS):
+           
+            bonus += 0.20
+        elif contains_any(text, TECHNOLOGY_TERMS):
+           
+            bonus += 0.05
     if contains_any(user_purpose, MEDICAL_TERMS) and contains_any(text, MEDICAL_TERMS):
         bonus += 0.25
 
@@ -1348,50 +1906,371 @@ def semantic_prefilter(sch: Dict, user_purpose: str) -> bool:
 
     return score >= 0.38 if contains_any(user_purpose, UNDERGRAD_TERMS) else score >= 0.40
 
-
-def llm_filter_scholarships(user_purpose, gender, scholarships, oai_client, debug=True):
-
+def llm_filter_scholarships(
+    user_purpose,
+    gender,
+    scholarships,
+    oai_client,
+    debug=True,
+    custom_system_prompt=None,
+    min_results=MIN_RESULTS,
+    user_type=None
+):
+ 
     gender_rule = ""
-    if gender and gender.lower() == "male":
+    # Handle both English and Swedish gender values
+    gender_lower = gender.lower() if gender else ""
+    if gender_lower in ["male", "man"]:
         gender_rule = "\nGENDER RULE: User is male. Exclude scholarships explicitly for women only."
-    elif gender and gender.lower() == "female":
+    elif gender_lower in ["female", "kvinna", "woman"]:
         gender_rule = "\nGENDER RULE: User is female. Exclude scholarships explicitly for men only."
 
-    is_undergrad = contains_any(user_purpose, UNDERGRAD_TERMS)
-    _is_res_user = is_research_user(user_purpose)
-    user_domain = get_user_domain(user_purpose)
+    user_domain    = get_user_domain(user_purpose)
+    is_undergrad   = contains_any(user_purpose, UNDERGRAD_TERMS)
+    _is_res_user   = is_research_user(user_purpose)
+    is_org_user    = user_type and user_type.lower() in ["organization", "organisation", "idrottsförening"]
+
+    if is_org_user:
+        if custom_system_prompt:
+            system_prompt = custom_system_prompt.format(
+                user_purpose=user_purpose,
+                gender_rule=gender_rule,
+                min_results=min_results
+            )
+        else:
+            system_prompt = f"""You are a scholarship relevance filter for an ORGANISATION applicant.
+The user is a förening, klubb, or legal entity (juridisk person) applying for funding.
+Your job is to decide which scholarships this organisation can realistically apply for.
+
+USER PURPOSE: "{user_purpose}"
+APPLICANT TYPE: ORGANISATION (förening, klubb, juridisk person)
+
+===============================================
+STEP 1 -- RECIPIENT TYPE CHECK (Highest Priority)
+===============================================
+The single most important question is: WHO receives the money?
+
+INCLUDE (strong match) if the scholarship purpose explicitly mentions
+ANY of the following as the recipient or eligible applicant:
+  - förening, föreningar, idrottsförening, idrottsföreningar
+  - klubb, klubbar, sportförening, sportföreningar
+  - juridiska personer, juridisk person
+  - organisationer, organisation, sammanslutning, sammanslutningar
+  - verksamhetsstöd, verksamhetsbidrag, föreningsbidrag, föreningsstöd
+  - utrustning (till förening eller klubb)
+  - utrustningsbidrag, träningsläger, lägerbidrag
+  - ungdomsverksamhet (where the ORGANISATION runs the activity)
+  - ideell förening, ideella föreningar
+  - lokala idrottssällskap, lokala föreningar
+  - "för sin verksamhet", "för verksamheten"
+  - lag, enskilda lag (as an organisation-level team, not individual)
+
+INCLUDE (broad match — no individual-only restriction found):
+  - Scholarships about "idrott", "sport", "kultur", or "ungdomsverksamhet"
+    that do NOT name individual persons as the sole recipients
+  - Scholarships where the purpose is broad enough that a förening
+    could realistically apply as the legal entity receiving funds
+  - Scholarships mentioning "bidrag till" without specifying only individuals
+
+===============================================
+STEP 2 -- EXCLUDE INDIVIDUAL-ONLY SCHOLARSHIPS
+===============================================
+EXCLUDE only when ALL THREE conditions below are true:
+
+  CONDITION A — The scholarship purpose uses INDIVIDUAL recipient language:
+    One or more of these terms appears AND refer to the scholarship recipient:
+    - ungdomar / ungdom (youth as direct recipients of money)
+    - elev / elever (school students as recipients)
+    - studerande / studenter (university students as recipients)
+    - talanger / lovande talanger (talented individuals as recipients)
+    - en ung person / unga personer (specific individuals)
+    - individuella sökande / enskilda sökande
+    - gymnast / spelare / idrottsutövare (individual athletes as recipients)
+    - barn (individual children as direct recipients)
+    - person / personer (when named as the only recipient type)
+
+  CONDITION B — The scholarship has NO organisational pathway:
+    None of these terms appear anywhere in the purpose:
+    - förening, klubb, organisation, sammanslutning
+    - juridiska personer, juridisk person
+    - verksamhetsstöd, föreningsbidrag, verksamhetsbidrag
+    - "för sin verksamhet", "för verksamheten"
+    - utrustning, läger, lägerbidrag
+
+  → EXCLUDE only if BOTH conditions (A + B) are satisfied.
+  → If even ONE condition is missing → INCLUDE. Let reranker sort it.
+
+===============================================
+STEP 3 -- HARD EXCLUDE (Always Irrelevant)
+===============================================
+ALWAYS EXCLUDE these regardless of anything else:
+  - Professorships, lectureships, named academic chair positions
+  - Pure medical or scientific research funds with no sport/culture link
+  - Scholarships requiring active university enrollment as individual
+  - Scholarships exclusively for study trips abroad by individuals
+  - Scholarships for individual artistic education (music, violin, art)
+  - Scholarships tied to a specific named school's graduating class
+  - Foundations whose PRIMARY purpose is environmental sustainability,
+    climate, natural resources, or social development causes AND have
+    no mention of sport, idrott, kultur, or the user's activity area
+  - Any foundation where the core mission has zero overlap with the
+    user's stated activity — if the user mentions a sport, exclude
+    foundations that are entirely about a different field with no
+    possible connection to that sport or physical activity
+  - Scholarships tied to a specific named school's graduating class{gender_rule}
+
+===============================================
+STEP 4 -- DOUBT RULE (Default Action)
+===============================================
+YOUR DEFAULT ACTION IS ALWAYS: INCLUDE
+
+Only exclude when you are CERTAIN that:
+  1. The scholarship money goes exclusively to individual persons
+  2. There is zero pathway for an organisation to apply
+  3. The scholarship requires individual personal criteria
+
+If you are uncertain about any of these three → INCLUDE.
+The reranker handles the sorting. Your job is to keep the candidate pool
+wide enough that relevant org-applicable scholarships are not lost.
+
+===============================================
+OUTPUT FORMAT
+===============================================
+Return ONLY a JSON array — no text, no markdown, no explanation:
+[{{"index": 0, "relevance": "relevant"}}, {{"index": 1, "relevance": "irrelevant"}}]"""
+
+        scholarship_list = "\n".join([
+            f"[{i}] {s['Name']}: {s['Purpose'][:400]}"
+            for i, s in enumerate(scholarships)
+        ])
+
+        user_prompt = (
+            f"Evaluate these scholarships for an ORGANISATION (förening/klubb): \"{user_purpose}\"\n\n"
+            f"Remember: The applicant is an organisation, not an individual person.\n"
+            f"Scholarships that only fund individual ungdomar, elever, or studerande\n"
+            f"should be excluded UNLESS they also mention förening, klubb, or juridiska personer.\n\n"
+            f"Scholarships:\n{scholarship_list}\n\n"
+            f"Minimum {min_results} relevant results required. "
+            f"Return the JSON array now."
+        )
+
+        response = oai_client.chat.completions.create(
+            model="gpt-4o",
+            temperature=0,
+            seed=42,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_prompt}
+            ]
+        )
+
+        try:
+            raw         = response.choices[0].message.content.strip()
+            start       = raw.index("[")
+            end         = raw.rindex("]") + 1
+            decisions   = json.loads(raw[start:end])
+            rel_indices = {
+                d["index"] for d in decisions
+                if isinstance(d, dict) and d.get("relevance") == "relevant"
+            }
+            rel_indices = {i for i in rel_indices if 0 <= i < len(scholarships)}
+            final_list  = [scholarships[i] for i in sorted(rel_indices)]
+
+            if len(final_list) < min_results:
+                if debug:
+                    print(f"\n[SAFETY NET ORG] LLM returned {len(final_list)} — padding to {min_results}")
+
+                included_names  = {s["Name"] for s in final_list}
+                org_terms       = [
+                    "förening", "föreningar", "klubb", "klubbar",
+                    "juridiska personer", "juridisk person",
+                    "verksamhetsstöd", "föreningsbidrag", "ideell förening",
+                    "idrottsförening", "ungdomsverksamhet"
+                ]
+                org_padding = [
+                    s for s in scholarships
+                    if s["Name"] not in included_names
+                    and contains_any(combined_scholarship_text(s), org_terms)
+                ]
+                remaining_padding = [
+                    s for s in scholarships
+                    if s["Name"] not in included_names
+                    and s["Name"] not in {x["Name"] for x in org_padding}
+                ]
+                needed     = min_results - len(final_list)
+                padding    = (org_padding + remaining_padding)[:needed]
+                final_list = final_list + padding
+
+                if debug:
+                    print(f"[SAFETY NET ORG] Padded to {len(final_list)} results")
+
+            if debug:
+                excluded = [s for i, s in enumerate(scholarships) if i not in rel_indices]
+                print(f"\n{'='*60}")
+                print(f"[LLM FILTER ORG] INCLUDED ({len(final_list)}):")
+                print(f"{'='*60}")
+                for s in final_list:
+                    cls = classify_scholarship(s)
+                    print(f"  [{cls:>8}] {s['Name']}")
+                    print(f"            Purpose: {s['Purpose'][:200]}")
+                    print(f"  {'-'*56}")
+                print(f"\n{'='*60}")
+                print(f"[LLM FILTER ORG] EXCLUDED ({len(excluded)}):")
+                print(f"{'='*60}")
+                for s in excluded:
+                    cls = classify_scholarship(s)
+                    print(f"  [{cls:>8}] {s['Name']}")
+                    print(f"            Purpose: {s['Purpose'][:200]}")
+                    print(f"  {'-'*56}")
+
+            return final_list
+
+        except Exception as e:
+            if debug:
+                print(f"[LLM FILTER ORG] FAILED: {e} — returning all candidates unchanged")
+            return scholarships
 
     if is_undergrad:
-        study_level_context = "The user is an UNDERGRADUATE student."
+        study_level_context = "UNDERGRADUATE student (bachelor/kandidat level)"
+        study_level_rules = """
+STUDY LEVEL RULES FOR UNDERGRADUATE USER:
+  INCLUDE scholarships that:
+    - Target studerande, studenter, kandidat, bachelor, grundnivå
+    - Are open to all university students (no level restriction)
+    - Mention both students AND researchers (dual-purpose is valid)
+    - Fund travel, exchange, or thesis work for students
+
+  EXCLUDE scholarships that:
+    - Exclusively fund doktorand, postdoc, or forskare
+    - Require completed doctoral degree
+    - Fund research positions with no student pathway
+    - Are purely for teaching staff or academic personnel
+
+  BORDERLINE CASES:
+    - Mentions "forskning" but also "studerande" → INCLUDE
+    - Mentions "vetenskaplig" but funds students → INCLUDE
+    - Mentions "forskning och utbildning" → INCLUDE (dual purpose)
+    - Mentions ONLY "forskare" with no student mention → EXCLUDE"""
+
     elif _is_res_user:
-        study_level_context = (
-            "The user is a RESEARCHER (doctoral/postdoc/research level). "
-            "PRIORITIZE research scholarships, research grants, forskarstipendier, "
-            "doctoral funding, and postdoc positions. "
-            "Include scholarships for 'forskning', 'vetenskaplig forskning', "
-            "'doktorand', 'postdoc', 'forskare'. "
-            "Student-only scholarships (grundnivå, bachelor) are LOWER priority "
-            "but can still be included if domain-relevant."
+        study_level_context = "RESEARCHER (doctoral/postdoc level)"
+        study_level_rules = """
+STUDY LEVEL RULES FOR RESEARCHER USER:
+  INCLUDE scholarships that:
+    - Target forskare, doktorand, postdoc, PhD, doctoral
+    - Fund scientific research or vetenskaplig forskning
+    - Are dual-purpose (students + researchers both valid)
+    - Fund research travel, sabbaticals, or research visits
+
+  ALSO INCLUDE (lower priority but valid):
+    - General student scholarships open to all levels
+    - Domain-specific scholarships even if undergraduate-focused
+
+  EXCLUDE scholarships that:
+    - Are exclusively for primary or secondary school students
+    - Have no connection to university-level study or research"""
+
+    else:
+        study_level_context = "UNSPECIFIED level"
+        study_level_rules = """
+STUDY LEVEL RULES FOR UNSPECIFIED USER:
+  Treat all study levels as eligible.
+  Include scholarships for students, researchers, and mixed purposes.
+  Only exclude clearly wrong-domain scholarships.
+
+INSTITUTIONAL FUND RULE:
+  EXCLUDE scholarships that primarily fund research infrastructure,
+  institutional operations, or academic department activities
+  AND have no direct personal application pathway for individuals.
+
+  Signals that confirm INSTITUTIONAL (→ EXCLUDE):
+    - "att skapa en institution", "institutionens verksamhet"
+    - "främja forskning" or "stödja forskning" as the SOLE purpose
+    - "jubileumsfond" funding research rather than student stipendier
+    - No mention of ansökan, sökande, or individual application
+    - No explicit amount per recipient or number of recipients
+    - Purpose describes supporting the institution itself, not students at it
+
+  INCLUDE if the scholarship also contains:
+    - stipendium, stipendier, bidrag, scholarship, grant
+    - ansökan, sökande, apply
+    - explicit recipient count or amount per person"""
+
+
+    domain_rules = {
+        "law": """DOMAIN RULES FOR LAW USER:
+  INCLUDE if scholarship mentions:
+    juridik, juridisk, juridiska, folkrätt, EG-rätt, affärsjuridik,
+    sjörätt, transporträtt, rättsvetenskap, jurist, juriststudent,
+    juridiska fakulteten, handelsrätt, skatterätt, civilrätt
+  INCLUDE ALWAYS: general student scholarships open to all fields
+  EXCLUDE ONLY IF: explicitly restricted to medicine, engineering,
+    music, agriculture, or maritime with zero law relevance""",
+
+        "business": """DOMAIN RULES FOR BUSINESS USER:
+  INCLUDE if scholarship mentions:
+    ekonomi, företagsekonomi, handelshögskolan, civilekonom,
+    nationalekonomi, handel, marknadsföring, redovisning, finance,
+    handelsprogrammet, ekonomistudent, business, management
+  INCLUDE ALWAYS: general student scholarships open to all fields
+  EXCLUDE ONLY IF: explicitly restricted to pure law, medicine,
+    music, agriculture with zero business relevance""",
+
+        "technology": """DOMAIN RULES FOR TECHNOLOGY USER:
+  INCLUDE if scholarship mentions:
+    teknik, teknisk, civilingenjör, ingenjör, datavetenskap,
+    datateknik, IT, software, KTH, Chalmers, elektroteknik,
+    maskinteknik, tekniska fakulteten, engineering
+  INCLUDE ALWAYS: general student scholarships open to all fields
+  EXCLUDE ONLY IF: explicitly restricted to law, medicine,
+    music, agriculture with zero technology relevance""",
+
+        "medical": """DOMAIN RULES FOR MEDICAL USER:
+  INCLUDE if scholarship mentions:
+    medicin, medicinsk, läkare, sjukvård, karolinska, biomedicin,
+    klinisk, farmaci, tandläkare, sjuksköterska, hälsovetenskap,
+    läkarprogrammet, healthcare, nursing
+  INCLUDE ALWAYS: general student scholarships open to all fields
+  EXCLUDE ONLY IF: explicitly restricted to law, engineering,
+    music, agriculture with zero medical relevance""",
+    }
+
+    domain_context = domain_rules.get(
+        user_domain,
+        "GENERAL USER: Include all student-facing and research-relevant scholarships."
+    )
+
+    domain_context = domain_rules.get(
+        user_domain,
+        "GENERAL USER: Include all student-facing and research-relevant scholarships."
+    )
+
+    if custom_system_prompt:
+        system_prompt = custom_system_prompt.format(
+            user_purpose=user_purpose,
+            study_level_context=study_level_context,
+            study_level_rules=study_level_rules,
+            domain_context=domain_context,
+            gender_rule=gender_rule,
+            min_results=min_results
         )
     else:
-        study_level_context = "The user has NOT specified a study level -- treat all levels as eligible."
-
-    domain_context = ""
-    if user_domain == "business":
-        domain_context = "BUSINESS USER: Include business, economics, finance, marketing, management, commerce, handelshogskolan. Exclude pure law, pure technology/engineering, medicine, music, arts."
-    elif user_domain == "law":
-        domain_context = "LAW USER: Include juridik, folkratt, EG-ratt, affarsjuridik, sjoratt, transportratt, rattsvetenskap. A law scholarship that mentions forskning alongside studerande is still valid. Exclude medicine, music, technology, natural sciences."
-    elif user_domain == "technology":
-        domain_context = "TECHNOLOGY USER: Include teknik, engineering, computer science, IT, software, electronics, civilingenjor. Exclude law, medicine, music, agriculture."
-    elif user_domain == "medical":
-        domain_context = "MEDICAL USER: Include medicin, medicine, healthcare, nursing, pharmacy, dental, biomedicin, klinisk forskning, karolinska, läkarutbildning. Exclude law, business, technology/engineering, music, arts."
-
-    system_prompt = f"""You are a scholarship relevance filter. Your job is to decide which scholarships are relevant for this user.
+        system_prompt = f"""You are a scholarship relevance filter. Your job is to decide which scholarships are relevant for this user.
 
 USER PURPOSE: "{user_purpose}"
 STUDY LEVEL CONTEXT: {study_level_context}
+{f'''
+GENDER RULE — APPLY BEFORE ANYTHING ELSE
+{gender_rule.strip()}
+Any scholarship with an explicit gender restriction that does not
+match the user MUST be marked irrelevant. This overrides all other rules.
+Check every scholarship for "kvinnlig", "kvinnliga", "manlig", "manliga"
+before evaluating domain or level.
+''' if gender_rule else ''}
 
+===============================================
 STEP 1 -- SUBJECT + STUDY LEVEL MATCH (Highest Priority)
+===============================================
 First, identify scholarships that DIRECTLY match the user's subject AND study level.
 These must be ranked and included first before anything else.
 
@@ -1410,15 +2289,19 @@ RESEARCH LANGUAGE RULE -- CRITICAL:
   -> If the purpose contains "grundutbildning" or "grundniva" -> ALWAYS INCLUDE for undergrad users
 
 STUDY LEVEL EXCEPTION:
-  If the user IS a researcher (PhD / postdoc / doctoral) -> also include research-primary scholarships. Prioritize research grants.
-  If the user is UNDERGRADUATE -> exclude scholarships that are EXCLUSIVELY doctoral/postdoc with NO student component.
+  If the user IS a researcher (PhD / postdoc / doctoral) -> also include research-primary scholarships.
+  If the user is UNDERGRADUATE -> exclude scholarships that are EXCLUSIVELY doctoral/postdoc/teaching with NO student component.
 
+===============================================
 STEP 2 -- DOMAIN MATCH
+===============================================
 After subject+level matches, evaluate domain fit.
 
 {domain_context}
 
+===============================================
 STEP 3 -- ENTITY TYPE CHECK
+===============================================
 EXCLUDE these regardless of subject:
   - Funds for professorships, guest professorships, chairs, lectureships (not student-facing)
   - Institutional support funds with no direct applicant pathway
@@ -1429,50 +2312,101 @@ INCLUDE these even if they mention research:
   - Direct scholarships/stipendier to named student groups
   - Generic university scholarships open to all students
   - Business school student funds
-  - Research grants and forskarstipendier (for research users){gender_rule}
+  - Research grants and forskarstipendier (for research users)
+
+===============================================
 STEP 4 -- DOUBT RULE
-When uncertain:
-  -> If it looks student-facing -> INCLUDE for undergrad users
-  -> If it looks research-focused -> INCLUDE for research users
-  -> If it looks institution/researcher-only -> EXCLUDE for undergrad users
-  -> Generic scholarships with no subject restriction are valid for any student/researcher
-N.B: Include Only those scholarships which are accurately mentioned users *SUBJECT*. Do not take any irrelevant subject scholarships.
+===============================================
+DEFAULT ACTION IS INCLUDE. Only exclude when you are certain.
+
+  -> Looks student-facing? -> ALWAYS INCLUDE for undergrad users
+  -> Looks research-focused? -> ALWAYS INCLUDE for research users
+  -> General university scholarship? -> INCLUDE, it may be relevant
+  -> Missing explicit subject keyword but context suggests match? -> INCLUDE
+  -> Clearly wrong domain (medicine for law user)? -> EXCLUDE
+  -> Clearly institutional only (professor salary fund)? -> EXCLUDE
+
+When uncertain: INCLUDE. The reranker will handle quality sorting afterward.
 Return ONLY a JSON array -- no text, no markdown:
 [{{"index": 0, "relevance": "relevant"}}, {{"index": 1, "relevance": "irrelevant"}}]"""
 
+    scholarship_list = "\n".join([
+        f"[{i}] {s['Name']}: {s['Purpose'][:400]}"
+        for i, s in enumerate(scholarships)
+    ])
+
     user_prompt = (
         f"Evaluate these scholarships for: \"{user_purpose}\"\n\n"
-        "Scholarships:\n" +
-        "\n".join([
-            f"[{i}] {s['Name']}: {s['Purpose'][:200]}"
-            for i, s in enumerate(scholarships)
-        ]) +
-        "\n\nReturn the JSON array now."
+        f"Remember: User is {study_level_context}. "
+        f"Check study level first, then domain.\n\n"
+        f"Scholarships:\n{scholarship_list}\n\n"
+        f"Minimum {min_results} relevant results required. "
+        f"Return the JSON array now."
     )
 
     response = oai_client.chat.completions.create(
         model="gpt-4o",
+        temperature=0,
+        seed=42,
         messages=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
+            {"role": "user",   "content": user_prompt}
         ]
     )
+
     try:
-        raw = response.choices[0].message.content.strip()
-        start = raw.index("[")
-        end = raw.rindex("]") + 1
-        decisions = json.loads(raw[start:end])
-        rel_indices = {d["index"] for d in decisions if d.get("relevance") == "relevant"}
-        final_list = [scholarships[i] for i in sorted(rel_indices) if 0 <= i < len(scholarships)]
+        raw         = response.choices[0].message.content.strip()
+        start       = raw.index("[")
+        end         = raw.rindex("]") + 1
+        decisions   = json.loads(raw[start:end])
+        rel_indices = {
+            d["index"] for d in decisions
+            if isinstance(d, dict) and d.get("relevance") == "relevant"
+        }
+        rel_indices = {i for i in rel_indices if 0 <= i < len(scholarships)}
+        final_list  = [scholarships[i] for i in sorted(rel_indices)]
+
+        if len(final_list) < min_results:
+            if debug:
+                print(f"\n[SAFETY NET] LLM returned {len(final_list)} — padding to {min_results}")
+
+            included_names = {s["Name"] for s in final_list}
+
+            domain_padding = [
+                s for s in scholarships
+                if s["Name"] not in included_names
+                and is_domain_match(combined_scholarship_text(s), user_purpose)
+            ]
+            student_padding = [
+                s for s in scholarships
+                if s["Name"] not in included_names
+                and s["Name"] not in {x["Name"] for x in domain_padding}
+                and is_strongly_student_facing(combined_scholarship_text(s))
+            ]
+            remaining_padding = [
+                s for s in scholarships
+                if s["Name"] not in included_names
+                and s["Name"] not in {x["Name"] for x in domain_padding}
+                and s["Name"] not in {x["Name"] for x in student_padding}
+            ]
+
+            needed     = min_results - len(final_list)
+            padding    = (domain_padding + student_padding + remaining_padding)[:needed]
+            final_list = final_list + padding
+
+            if debug:
+                print(f"[SAFETY NET] Padded to {len(final_list)} results")
 
         if debug:
-            excluded = [scholarships[i] for i in range(len(scholarships)) if i not in rel_indices]
+            excluded = [s for i, s in enumerate(scholarships) if i not in rel_indices]
             print(f"\n{'='*60}")
             print(f"[LLM FILTER] INCLUDED ({len(final_list)}):")
             print(f"{'='*60}")
             for s in final_list:
-                cls = classify_scholarship(s)
-                print(f"  [{cls:>8}] {s['Name']}")
+                cls    = classify_scholarship(s)
+                is_dom = is_domain_match(combined_scholarship_text(s), user_purpose)
+                group  = "GROUP A" if is_dom else "GROUP B"
+                print(f"  [{group}][{cls:>8}] {s['Name']}")
                 print(f"            Purpose: {s['Purpose'][:200]}")
                 print(f"  {'-'*56}")
             print(f"\n{'='*60}")
@@ -1485,97 +2419,716 @@ Return ONLY a JSON array -- no text, no markdown:
                 print(f"  {'-'*56}")
 
         return final_list
+
     except Exception as e:
         if debug:
-            print(f"[LLM FILTER] FAILED: {e} -- returning all candidates unchanged")
+            print(f"[LLM FILTER] FAILED: {e} — returning all candidates unchanged")
         return scholarships
 
 
-def rerank_with_llm(query, scholarships, oai_client, top_n=10, debug=True):
+def rerank_with_llm(query, scholarships, oai_client, top_n=10, debug=True, user_type=None, custom_rerank_prompt=None, gender=None):
     is_undergrad = contains_any(query, UNDERGRAD_TERMS)
     _is_res_user = is_research_user(query)
+    user_domain  = get_user_domain(query)
+    is_org_user  = user_type and user_type.lower() in ["organization", "organisation", "idrottsförening"]
 
-    level_note = ""
-    if is_undergrad:
-        level_note = (
-            "VIKTIGT: Användaren är undergraduate. "
-            "Stipendier som riktar sig till STUDENTER ska rankas HÖGST. "
-            "Stipendier med 'studerande'/'grundnivå'/'bachelor'/'kandidat' "
-            "ska rankas före forskningsfokuserade stipendier.\n\n"
-        )
-    elif _is_res_user:
-        level_note = (
-            "VIKTIGT: Användaren söker FORSKNING/DOKTORAND-stipendier. "
-            "Stipendier för forskning, doktorander, postdoc ska rankas HÖGST. "
-            "Stipendier med 'forskning'/'vetenskaplig'/'doktorand'/'forskare' "
-            "ska rankas före rena studentstipendier.\n\n"
-        )
+    # Build gender_rule at top so all branches can access it
+    gender_rule = ""
+    # Handle both English and Swedish gender values
+    gender_lower = gender.lower() if gender else ""
+    if gender_lower in ["male", "man"]:
+        gender_rule = "User is male. Exclude scholarships explicitly for women only."
+    elif gender_lower in ["female", "kvinna", "woman"]:
+        gender_rule = "User is female. Exclude scholarships explicitly for men only."
+
+    gender_instruction = (
+        f"GENDER RULE: {gender_rule}\n"
+        f"Any scholarship with a gender restriction not matching the user "
+        f"must be ranked absolutely last regardless of domain.\n\n"
+    ) if gender_rule else ""
+
+    domain_configs = {
+        "law": {
+            "label": "LAW",
+            "swedish_label": "JURIDIK",
+            "subject_terms": [
+                "juridik", "juridisk", "jurist", "rättsvetenskap",
+                "folkrätt", "affärsjuridik", "sjörätt", "EG-rätt",
+                "juridiska fakulteten", "juristprogrammet"
+            ]
+        },
+        "business": {
+            "label": "BUSINESS",
+            "swedish_label": "EKONOMI",
+            "subject_terms": [
+                "ekonomi", "företagsekonomi", "handelshögskolan",
+                "civilekonom", "nationalekonomi", "handel",
+                "marknadsföring", "redovisning", "finance",
+                "handelsprogrammet", "ekonomistudent",
+                "school of economics", "school of business",
+                "business school", "SSE", "HHS", "bachelor students",
+                "business students", "economics students"
+            ]
+        },
+        "technology": {
+            "label": "TECHNOLOGY",
+            "swedish_label": "TEKNIK",
+            "subject_terms": [
+                "teknik", "teknisk", "ingenjör",
+                "datateknik", "datavetenskap", "IT", "KTH",
+                "Chalmers", "tekniska fakulteten", "software"
+            ]
+        },
+        "medical": {
+            "label": "MEDICAL",
+            "swedish_label": "MEDICIN",
+            "subject_terms": [
+                "medicin", "medicinsk", "läkare", "sjukvård",
+                "karolinska", "biomedicin", "klinisk",
+                "läkarprogrammet", "farmaci", "tandläkare"
+            ]
+        }
+    }
+
+    cfg           = domain_configs.get(user_domain, None)
+    domain_label  = cfg["label"]         if cfg else "GENERAL"
+    swedish_label = cfg["swedish_label"] if cfg else "ämne"
+    subject_terms = ", ".join(cfg["subject_terms"]) if cfg else ""
 
     formatted = "\n".join([
-        f"{i+1}. {s['Name']}: {s['Purpose'][:150]}"
+        f"{i+1}. {s['Name']}: {s['Purpose'][:200]}"
         for i, s in enumerate(scholarships)
     ])
 
-    if _is_res_user:
-        priority_order = (
-            f"Prioriteringsordning:\n"
-            f"1. Stipendier för forskning inom användarens ämnesområde (HÖGST)\n"
-            f"2. Forskarstipendier och forskningsbidrag\n"
-            f"3. Stipendier med forskningskomponent vid relevant fakultet/högskola\n"
-            f"4. Blandade stipendier (forskning + utbildning)\n"
-            f"5. Allmänna stipendier utan ämnesbegränsning (LÄGST)\n\n"
-        )
-    else:
-        priority_order = (
-            f"Prioriteringsordning:\n"
-            f"1. Stipendier som nämner användarens ämne OCH riktar sig till studenter (HÖGST)\n"
-            f"2. Stipendier till studerande vid relevant fakultet/högskola\n"
-            f"3. Stipendier med studentnytta inom ämnesområdet\n"
-            f"4. Studentkårsfonder och direkta bidrag\n"
-            f"5. Allmänna stipendier utan ämnesbegränsning (LÄGST)\n\n"
+    if is_org_user:
+        org_tier_block = f"""
+
+PRE-CHECK — APPLY BEFORE ASSIGNING ANY TIER
+
+This is an ORGANISATION applicant (förening, klubb, juridisk person).
+Before placing any scholarship in a tier, answer these two questions:
+
+QUESTION 1 — Does the scholarship name an ORGANISATION as recipient?
+  Look for ANY of these terms referring to the applicant or recipient:
+    - förening, föreningar, idrottsförening, idrottsföreningar
+    - klubb, klubbar, sportförening, sportföreningar
+    - juridiska personer, juridisk person
+    - organisationer, organisation, sammanslutning
+    - verksamhetsstöd, verksamhetsbidrag, föreningsbidrag, föreningsstöd
+    - utrustning (to a club or association, not an individual)
+    - utrustningsbidrag, lägerbidrag, träningsläger
+    - ungdomsverksamhet (when ORGANISATION runs the activity)
+    - ideell förening, ideella föreningar
+    - lag, enskilda lag (as a team/club entity, not individual player)
+    - "stöd till föreningar", "bidrag till föreningar"
+    - "för sin verksamhet", "för verksamheten"
+  → If YES to any above → Tier 1 candidate. Go to Tier Assignment.
+
+QUESTION 2 — Does the scholarship ONLY name INDIVIDUALS as recipients
+             with NO organisational pathway at all?
+  Individual-only signals (ONE or more is enough to confirm):
+    - ungdomar / ungdom (youth as direct money recipients)
+    - elev / elever (individual school students)
+    - studerande / studenter (individual university students)
+    - talanger / lovande talanger (individual talented persons)
+    - en ung person / unga personer (specific individuals)
+    - individuella sökande / enskilda sökande / enskilda idrottare
+    - gymnast / spelare / idrottsutövare (individual athletes)
+    - barn (individual children as direct recipients)
+    - person / personer (when the ONLY recipient type named)
+
+  AND confirm NO organisational pathway exists — NONE of these appear:
+    - förening, klubb, organisation, sammanslutning
+    - juridiska personer, juridisk person
+    - verksamhetsstöd, föreningsbidrag, verksamhetsbidrag
+    - utrustning, läger, lägerbidrag
+    - "för sin verksamhet", "för verksamheten"
+
+TIER ASSIGNMENT
+
+
+TIER 1 — ORGANISATION DIRECT FUNDING (show first)
+
+The scholarship explicitly names an organisation as applicant
+or recipient, OR the purpose is clearly about funding organisational
+activities rather than individuals.
+
+Strong Tier 1 signals (one is enough to place here):
+  - förening / idrottsförening / klubb named as eligible applicant
+  - juridiska personer explicitly mentioned as eligible
+  - verksamhetsstöd / verksamhetsbidrag / föreningsbidrag / föreningsstöd
+  - utrustningsbidrag / utrustning till förening eller klubb
+  - lägerbidrag / träningsläger (organisation arranges the camp)
+  - ungdomsverksamhet where the förening or klubb is the applicant
+  - ideell förening / ideella föreningar as the applicant type
+  - "stöd till föreningar" / "bidrag till föreningar"
+  - "för sin verksamhet" / "för verksamheten"
+  - lag or enskilda lag as a team-level applicant (not individual player)
+  - sammanslutning named as eligible recipient
+
+Within Tier 1, rank HIGHER if:
+  → Explicitly says "juridiska personer" or "förening kan söka"
+  → Mentions multiple org-applicable activities (utrustning + läger)
+  → Has no individual-only restriction anywhere in the purpose
+  → Purpose matches the user's stated activity area closely
+
+Within Tier 1, rank LOWER if:
+  → Org eligibility is implied rather than explicit
+  → Purpose mixes both org and individual recipients
+  → Geographic restriction reduces fit
+
+
+TIER 2 — BROAD SPORTS/ACTIVITY FUNDING (no individual lock)
+
+Scholarships about idrott, sport, kultur, or ungdomsverksamhet
+that do NOT explicitly restrict recipients to individuals only,
+and where a förening or klubb could plausibly apply.
+**If you see two sport is mentioned by user then try to give two sports scholarships**
+Tier 2 signals:
+  - idrott / sport / idrottsverksamhet without naming only individuals
+  - "stöd till idrott" / "bidrag till idrott" without individual lock
+  - Broad cultural or community activity funding
+  - Purpose mentions both individuals AND associations as potential recipients
+  - No explicit individual-only restriction found
+  - Activity type matches user's purpose even if applicant type unclear
+
+Within Tier 2, rank HIGHER if:
+  → Activity area closely matches user's stated purpose
+  → Purpose is genuinely ambiguous (could be org or individual)
+  → Mentions any org-adjacent term loosely
+
+Within Tier 2, rank LOWER if:
+  → Leans more toward individual language but not confirmed
+  → Activity area is only loosely related to user's purpose
+  → Geographic restriction reduces fit
+  → No mention of sport, idrott, or the user's specific activity area
+
+
+TIER 3 — MIXED OR UNCLEAR APPLICANT TYPE
+
+TIER 3 — MIXED OR UNCLEAR APPLICANT TYPE
+
+Purpose is genuinely ambiguous. Cannot clearly confirm whether
+an organisation OR individual is the intended applicant.
+Not enough signals for Tier 1 or 2, but not clearly Tier 4 either.
+
+Within Tier 3, rank HIGHER if:
+  → Activity area matches the user's stated purpose (sport, kultur etc.)
+  → Mentions any org-adjacent term loosely
+
+Within Tier 3, rank LOWER if:
+  → Activity area has no connection to user's stated purpose
+  → Purpose is about a completely different field (environment, 
+     sustainability, social causes) with no sport or activity link
+
+
+TIER 4 — INDIVIDUAL RECIPIENTS ONLY (show last)
+
+Only scholarships that passed ALL THREE pre-check conditions above:
+  1. Two or more individual recipient signals confirmed
+  2. Zero organisational pathway terms found
+  3. Personal individual criteria required
+
+Examples of clear Tier 4:
+  - Youth scholarships going directly to ungdomar as individuals
+  - Student scholarships requiring university enrollment
+  - Individual athlete talent scholarships
+  - School student prizes for personal academic merit
+  - Scholarships requiring personal birth location or residency
+
+FILL RULE AND OUTPUT ORDER
+
+Always output in strict tier order: Tier 1 → Tier 2 → Tier 3 → Tier 4.
+Never skip tiers. Never mix tiers in the output.
+
+If fewer than 10 scholarships exist across Tier 1 and Tier 2:
+  → Fill remaining slots from Tier 3 before touching Tier 4.
+  → Only use Tier 4 entries if Tier 1 + 2 + 3 combined are fewer than 10.
+
+If total pool has fewer than 10 scholarships:
+  → Output all available, still in strict tier order.
+
+IMPORTANT — DO NOT place a scholarship in Tier 1 or Tier 2 simply
+because it supports sport or youth in a general sense.
+The deciding factor is always: WHO receives the money?
+If the money goes to an individual person → Tier 4.
+If the money goes to an organisation or could go to one → Tier 1 or 2.
+"""
+
+        org_level_note = (
+            f"USER CONTEXT: ORGANISATION (förening/klubb/juridisk person).\n"
+            f"The applicant is an organisation, NOT an individual person.\n"
+            f"Scholarships that only fund individual ungdomar, elever, or studerande\n"
+            f"must go to Tier 4 unless they also mention förening, klubb, or juridiska personer.\n\n"
         )
 
-    prompt = (
-        f"Rangordna dessa stipendier för användaren: \"{query}\".\n\n"
-        f"{level_note}"
-        f"{priority_order}"
-        f"Returnera ENDAST en JSON-array: [3, 1, 2]\n\n"
-        f"{formatted}"
-    )
+        prompt = (
+            f"Rank these scholarships for the organisation query: \"{query}\".\n\n"
+            f"{org_level_note}"
+            f"{org_tier_block}\n"
+            f"STEP-BY-STEP BEFORE YOU RESPOND:\n"
+            f"  Step 0 — Apply DISQUALIFICATION RULE first.\n"
+            f"            Individual-only scholarships (ungdomar, elev, studerande)\n"
+            f"            with no förening/klubb/juridiska personer mention → TIER 4.\n"
+            f"  Step 1 — Identify Tier 1: explicit organisation funding.\n"
+            f"            förening, juridiska personer, verksamhetsstöd, föreningsbidrag.\n"
+            f"  Step 2 — Identify Tier 2: broad sports/activity funding an org could apply for.\n"
+            f"  Step 3 — Identify Tier 3: ambiguous applicant type.\n"
+            f"  Step 4 — All individual-only go to Tier 4 last.\n"
+            f"  Step 5 — Verify no lower tier appears above a higher tier.\n\n"
+            f"Return ONLY a JSON array of 1-based positions: [3, 1, 2, ...]\n\n"
+            f"Scholarships:\n{formatted}"
+        )
+
+        system_content = (
+            "You are a strict JSON-only scholarship ranker for an ORGANISATION applicant. "
+            "The user is a förening, klubb, or juridisk person — NOT an individual. "
+            "TIER 1: explicit organisation funding — förening, juridiska personer, verksamhetsstöd. "
+            "TIER 2: broad sports or activity funding an organisation could apply for. "
+            "TIER 3: mixed or unclear applicant type. "
+            "TIER 4: individual-only scholarships — ungdomar, elev, studerande with no org pathway. "
+            "Scholarships funding only individual persons go dead last. "
+            "Never place a lower tier above a higher tier. "
+            "Output only a valid JSON array of integers."
+        )
+
+  
+    else:
+        if is_undergrad:
+            level_note = (
+                f"USER CONTEXT: {domain_label} UNDERGRADUATE student.\n"
+                f"Subject-specific direct personal scholarships must occupy positions 1 onwards.\n"
+                f"Gymnasium scholarships and institutional research funds always go last.\n\n"
+            )
+            tier_block = f"""
+
+AUTOMATIC DISQUALIFICATION — CHECK BEFORE ASSIGNING TIERS
+
+These two rules override all tier placement.
+Apply them first before reading the tier definitions below.
+
+DISQUALIFICATION RULE 1 — WRONG EDUCATION LEVEL:
+  If the scholarship explicitly targets any of the following, place it in TIER 4 regardless of any other signal:
+- gymnasieelever, gymnasieskolan, gymnasiet
+- elev vid school name or elev i school name when the school is a high school or gymnasium
+- årskurs 1, årskurs 2, årskurs 3 when referring to gymnasium
+- grundskolan, grundskoleelev
+- any pre-university or high school level student
+  A gymnasium scholarship is never relevant for a
+  university undergraduate student. Even if it mentions
+  the user's subject area, place it in Tier 4.
+
+DISQUALIFICATION RULE 2 — INSTITUTIONAL NOT PERSONAL:
+  If the scholarship primarily funds research infrastructure,
+  a research foundation, or academic institution operations
+  AND does not describe a direct personal application pathway
+  for individual students, place it in TIER 4.
+  A domain term match alone does NOT make it Tier 1.
+
+  Signals that confirm it is INSTITUTIONAL (→ Tier 4):
+    - "stödja forskning", "vetenskaplig forskning" as primary purpose
+    - "institutionen för", "forskningsverksamhet"
+    - "jubileumsfond" funding research rather than student stipendier
+    - No mention of individual application, ansökan, or sökande
+    - No explicit amount per student or number of recipients
+    - Supports the institution itself, not the students at it
+
+  Example: A fund named after a business school that supports
+  research at that school is NOT a scholarship for business students.
+  It belongs in Tier 4.
+TIER 1 — {domain_label}-SPECIFIC DIRECT SCHOLARSHIPS
+Place these in positions 1 onwards. Fill as many as possible here.
+
+A scholarship belongs in Tier 1 if it meets BOTH conditions:
+
+CONDITION A — Subject match (Swedish OR English terms count equally):
+  Contains any of: {subject_terms}
+  OR targets students at a {domain_label.lower()} faculty or program
+  OR uses English institution names that are well-known business/law/
+  technology/medical schools in Sweden
+
+  CRITICAL: English-language scholarships qualify fully.
+  "Bachelor students at SSE", "Stockholm School of Economics",
+  "School of Economics", "faculty of law", "engineering students"
+  are all valid Tier 1 subject signals. Do NOT require Swedish
+  keywords to confirm a subject match. Read the meaning, not just
+  the language.
+
+CONDITION B — Direct personal scholarship (not institutional):
+  Describes a scholarship that individual students apply to directly.
+  At least one of these must be present:
+    - Explicit amount per recipient (e.g. SEK 50,000 each)
+    - Number of recipients (e.g. seven scholarships)
+    - Application language: ansökan, sökande, apply, applications
+    - Named student group receiving the scholarship
+  A fund that "supports research" or "contributes to" an institution
+  does NOT meet Condition B even if the institution is relevant.
+
+TIER 2 — STUDY LEVEL MATCHED SCHOLARSHIPS
+
+Place these after all Tier 1 scholarships.
+
+A scholarship belongs here if:
+  - No subject restriction — open to any university field
+  - Explicitly targets the user's study level
+    (kandidat, bachelor, undergraduate, master, doktorand)
+  - Individual students can apply directly
+  - Is NOT gymnasium or pre-university level
+
+TIER 3 — GENERIC OPEN-TO-ALL SCHOLARSHIPS
+
+Place these after all Tier 2 scholarships.
+
+A scholarship belongs here if:
+  - No subject restriction
+  - No explicit study level restriction
+  - Any university student can apply
+  - General merit, need-based, or geographic scholarships
+  - Individual students can apply directly
+
+TIER 4 — DEAD LAST (research, institutional, wrong level)
+
+Place these last. Everything disqualified above also goes here.
+
+A scholarship belongs here if ANY of these are true:
+  - Gymnasium or pre-university level (Rule 1 above)
+  - Primarily funds research or institution operations (Rule 2 above)
+  - Mixed purpose with no clear individual student pathway
+  - Primarily research or travel grants for researchers
+  - Eligibility is unclear or requires assumptions to confirm
+  A scholarship targeting pre-university students is never relevant for a university undergraduate user. Even if it mentions the user's subject area
+
+FILL RULE:
+  If fewer than {top_n} Tier 1 scholarships exist, fill remaining
+  slots with Tier 2 first, then Tier 3, then Tier 4.
+  Always in strict order. Never skip tiers to pad results.
+"""
+            system_content = (
+                "You are a strict JSON-only scholarship ranker for an UNDERGRADUATE student. "
+                f"Ranking for a {domain_label} undergraduate user. "
+                "Apply disqualification first: gymnasium → Tier 4, institutional research → Tier 4. "
+                "TIER 1: subject-specific direct personal scholarships, English names qualify. "
+                "TIER 2: study level matched open-to-all scholarships. "
+                "TIER 3: generic open-to-all university scholarships. "
+                "TIER 4: research, institutional, gymnasium — always last. "
+                "Output only a valid JSON array of integers."
+            )
+            step_checklist = (
+                f"  Step 0 — Gymnasium → Tier 4. Institutional research → Tier 4.\n"
+                f"  Step 1 — Tier 1: subject match AND direct personal scholarship.\n"
+                f"            English names like SSE, Bachelor students qualify.\n"
+                f"  Step 2 — Tier 2: study level matched, any subject. After Tier 1.\n"
+                f"  Step 3 — Tier 3: generic open-to-all. After Tier 2.\n"
+                f"  Step 4 — Tier 4: all remaining last.\n"
+                f"  Step 5 — No lower tier above higher tier.\n"
+            )
+
+
+
+        else:
+            level_note = (
+                f"USER CONTEXT: {domain_label} student (level not specified).\n"
+                f"Rank subject-specific direct scholarships first.\n\n"
+            )
+            tier_block = f"""
+AUTOMATIC DISQUALIFICATION — CHECK BEFORE ASSIGNING TIERS
+
+DISQUALIFICATION RULE — INSTITUTIONAL NOT PERSONAL:
+  If the scholarship primarily funds research infrastructure,
+  institutional operations, or academic department activities
+  AND does not describe a direct personal application pathway,
+  place it in TIER 3 (dead last).
+
+  Signals that confirm INSTITUTIONAL (→ Tier 3):
+    - "att skapa en institution", "institutionens verksamhet"
+    - "främja forskning" or "stödja forskning" as the SOLE purpose
+    - "jubileumsfond" funding research rather than student stipendier
+    - No mention of ansökan, sökande, or individual application
+    - No explicit amount per recipient or number of recipients
+  A domain term match alone does NOT save it from Tier 3.
+
+TIER 1 — {domain_label}-SPECIFIC DIRECT SCHOLARSHIPS:
+  Contains any of: {subject_terms}
+  Direct scholarship individual students apply to.
+  Must have: stipendium, bidrag, ansökan, or explicit recipient info.
+
+TIER 2 — GENERAL UNIVERSITY SCHOLARSHIPS:
+  No subject restriction, open to any university student.
+
+TIER 3 — MIXED, UNCLEAR, OR INSTITUTIONAL:
+  Institutional funds, research foundations, unclear pathway.
+
+FILL RULE: Tier 1 first, Tier 2, Tier 3 last.
+"""
+            system_content = (
+                "You are a strict JSON-only scholarship ranker. "
+                f"TIER 1: subject-specific direct scholarships for {domain_label}. "
+                "TIER 2: general university scholarships. "
+                "TIER 3: mixed or unclear. "
+                "Output only a valid JSON array of integers."
+            )
+            step_checklist = (
+                f"  Step 1 — Tier 1: subject-specific direct scholarships. Place first.\n"
+                f"  Step 2 — Tier 2: general university scholarships. After Tier 1.\n"
+                f"  Step 3 — Tier 3: all remaining last.\n"
+            )
+
+        gender_instruction = (
+            f"GENDER RULE: {gender_rule.strip()}\n"
+            f"Any scholarship with a gender restriction not matching the user "
+            f"must be ranked absolutely last regardless of domain.\n\n"
+        ) if gender_rule else ""
+        prompt = (
+            f"Rank these scholarships for the user query: \"{query}\".\n\n"
+            f"{gender_instruction}"
+            f"{level_note}"
+            f"{tier_block}\n"
+            f"STEP-BY-STEP BEFORE YOU RESPOND:\n"
+            f"{step_checklist}\n"
+            f"Return ONLY a JSON array of 1-based positions: [3, 1, 2, ...]\n\n"
+            f"Scholarships:\n{formatted}"
+        )
+
+
+  
+    if custom_rerank_prompt:
+        system_content = custom_rerank_prompt
+
     response = oai_client.chat.completions.create(
         model="gpt-4o",
+        temperature=0,
+        seed=42,
         messages=[
-            {"role": "system", "content": "You are a JSON-only responder. Output only a valid JSON array of integers."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": system_content},
+            {"role": "user",   "content": prompt}
         ]
     )
+
     raw = response.choices[0].message.content.strip()
     try:
-        start = raw.index("[")
-        end = raw.rindex("]") + 1
+        start    = raw.index("[")
+        end      = raw.rindex("]") + 1
         idx_list = json.loads(raw[start:end])
-        ranked = [scholarships[i-1] for i in idx_list if 1 <= i <= len(scholarships)]
+        ranked   = [scholarships[i - 1] for i in idx_list if 1 <= i <= len(scholarships)]
 
         if debug:
             print(f"\n{'='*60}")
             print(f"[LLM RERANK] Final Order (top {top_n}):")
             print(f"{'='*60}")
             for i, s in enumerate(ranked[:top_n]):
-                cls = classify_scholarship(s)
-                print(f"  {i+1}. [{cls:>8}] {s['Name']}")
+                cls    = classify_scholarship(s)
+                is_dom = is_domain_match(combined_scholarship_text(s), query)
+                tier   = "TIER 1" if is_dom else "TIER 2+"
+                print(f"  {i+1}. [{tier}][{cls:>8}] {s['Name']}")
                 print(f"     Purpose: {s['Purpose'][:200]}")
                 print(f"  {'-'*56}")
 
         return ranked[:top_n]
+
     except Exception as e:
         if debug:
             print(f"[LLM RERANK] FAILED: {e}")
         return scholarships[:top_n]
 
 
-def find_scholarships_v2(user_purpose, gender=None, top_k=DEFAULT_TOP_K, debug=True, use_llm_rerank=True):
+
+
+# def find_scholarships_v2(
+#     user_purpose,
+#     gender=None,
+#     top_k=DEFAULT_TOP_K,
+#     debug=True,
+#     use_llm_rerank=True,
+#     user_type=None,
+#     municipality_filter=False,
+#     municipality=None,
+#     custom_system_prompt=None,
+#     custom_rerank_prompt=None,
+# ):
+#     global index, INDEX_NAME
+    
+  
+#     try:
+#         from django.conf import settings
+#         if settings.SITE_CONFIG:
+#             INDEX_NAME = settings.SITE_CONFIG.get_active_dataset_index_name()
+#             index = pc.Index(INDEX_NAME)
+#     except Exception as e:
+#         if debug:
+#             print(f"Note: Using default index. Details: {e}")
+    
+#     _is_res_user = is_research_user(user_purpose)
+#     _is_ug_user = contains_any(user_purpose, UNDERGRAD_TERMS)
+ 
+#     if debug:
+#         print(f"\n{'#'*60}")
+#         print(f"# SEARCH: {user_purpose}")
+#         print(f"# Domain: {get_user_domain(user_purpose)}")
+#         print(f"# Undergrad: {_is_ug_user}")
+#         print(f"# Research User: {_is_res_user}")
+#         print(f"# Top-K: {top_k}")
+#         print(f"# User Type: {user_type or 'not specified'}")
+#         print(f"# Municipality Filter: {municipality_filter} | Municipality: {municipality or 'none'}")
+#         print(f"{'#'*60}")
+ 
+#     filters = {}
+ 
+#     if user_type:
+#         user_type_lower = user_type.lower()
+#         if user_type_lower in ["individual", "privatperson", "person"]:
+#             filters["Kommentar"] = {"$in": ["Flera", "Studier"]}
+#         elif user_type_lower in ["organization", "organisation", "idrottsförening"]:
+#             filters["Kommentar"] = {"$in": ["Flera", "Idrottsförening"]}
+ 
+#     # if municipality_filter and municipality:
+#     #     filters["Kommun"] = municipality.strip()
+#     if municipality_filter and municipality:
+#         filters["Kommun"] = resolve_municipality(municipality)
+#     if debug:
+#         print(f"Pinecone Filters:\n{json.dumps(filters, indent=4, ensure_ascii=False)}\n")
+ 
+#     emb_query = expand_user_query_for_embedding(user_purpose)
+#     query_vector = openai_client.embeddings.create(
+#         model=EMBEDDING_MODEL, input=emb_query
+#     ).data[0].embedding
+ 
+    
+#     if filters:
+#         res = index.query(vector=query_vector, top_k=top_k, include_metadata=True, filter=filters)
+#     else:
+#         res = index.query(vector=query_vector, top_k=top_k, include_metadata=True)
+ 
+#     initial_list = []
+#     for m in res.get("matches", []):
+#         md = m["metadata"]
+#         s = {
+#             "Name": md.get("Namn", ""),
+#             "Purpose": md.get("Ändamål", ""),
+#             "Study Level": md.get("Utbildningsnivå", ""),
+#             "Base Score": round(m["score"], 4)
+#         }
+#         for k, v in FIELD_MAP_SV.items():
+#             if k not in s:
+#                 s[k] = md.get(v, "")
+#         s["Relevance Score"] = compute_soft_score(s, user_purpose)
+#         s["Entity Bonus"] = compute_entity_bonus(s, user_purpose)
+#         s["Adjusted Score"] = round(
+#             s["Base Score"] + s["Relevance Score"] + s["Entity Bonus"], 4
+#         )
+#         initial_list.append(s)
+ 
+#     if debug:
+#         print(f"\n{'='*60}")
+#         print(f"[PINECONE] Retrieved {len(initial_list)} candidates")
+#         print(f"{'='*60}")
+
+#     kept_rules = []
+#     excluded_rules = []
+ 
+#     for sch in initial_list:
+#         # Gender check runs first — cheapest, most reliable, domain-agnostic
+#         if gender:
+#             fail_gender, gender_reason = should_exclude_gender_mismatch(sch, gender)
+#             if fail_gender:
+#                 excluded_rules.append((sch, gender_reason))
+#                 continue
+
+#         fail_entity, entity_reason = should_exclude_entity_type(sch, user_purpose)
+#         if fail_entity:
+#             excluded_rules.append((sch, entity_reason))
+#             continue
+
+#         fail_research, research_reason = should_exclude_research_doctoral(sch, user_purpose)
+#         if fail_research:
+#             cls = classify_scholarship(sch)
+#             excluded_rules.append((sch, f"Research Mismatch [{cls}] - {research_reason}"))
+#             continue
+
+#         fail_level, level_reason = should_exclude_study_level_mismatch(sch, user_purpose)
+#         if fail_level:
+#             excluded_rules.append((sch, f"Study Level Mismatch - {level_reason}"))
+#             continue
+
+#         kept_rules.append(sch)
+ 
+#     if debug:
+#         pass  
+#     kept_semantic = []
+#     excluded_semantic = []
+ 
+#     for sch in kept_rules:
+#         if semantic_prefilter(sch, user_purpose):
+#             kept_semantic.append(sch)
+#         else:
+#             excluded_semantic.append(sch)
+ 
+#     if debug:
+#         pass  
+#     final_data = sorted(
+#         kept_semantic, key=lambda x: x["Adjusted Score"], reverse=True
+#     )[:MAX_CANDIDATES_FOR_LLM]
+ 
+#     if debug:
+#         print(f"\n{'='*60}")
+#         print(f"[PRE-LLM] Sending {len(final_data)} candidates to LLM filter")
+#         print(f"{'='*60}")
+ 
+  
+#     if final_data:
+#         llm_filtered = llm_filter_scholarships(
+#             user_purpose, gender, final_data, openai_client, debug=debug, custom_system_prompt=custom_system_prompt, user_type=user_type
+#         )
+#         if len(llm_filtered) < MIN_RESULTS:
+#             if debug:
+#                 print(f"\n[SAFETY NET] LLM returned only {len(llm_filtered)} -- padding to {MIN_RESULTS}")
+#             existing_names = {s["Name"] for s in llm_filtered}
+#             padding = [s for s in final_data if s["Name"] not in existing_names]
+#             final_data = llm_filtered + padding[:MIN_RESULTS - len(llm_filtered)]
+#         else:
+#             final_data = llm_filtered
+ 
+#     if use_llm_rerank and len(final_data) > 1:
+#         final_data = rerank_with_llm(
+#             user_purpose, final_data, openai_client, debug=debug, custom_rerank_prompt=custom_rerank_prompt, user_type=user_type, gender=gender
+#         )
+ 
+#     if debug:
+#         print(f"\n{'='*60}")
+#         print(f"[FINAL] Returning {len(final_data[:MIN_RESULTS])} results")
+#         print(f"{'='*60}")
+#         for i, s in enumerate(final_data[:MIN_RESULTS]):
+#             cls = classify_scholarship(s)
+#             print(f"  {i+1}. [{cls:>8}] {s['Name']}")
+#             print(f"     Purpose: {s['Purpose'][:200]}")
+ 
+#     return final_data[:MIN_RESULTS]
+
+def find_scholarships_v2(
+    user_purpose,
+    gender=None,
+    top_k=DEFAULT_TOP_K,
+    debug=True,
+    use_llm_rerank=True,
+    user_type=None,
+    municipality_filter=False,
+    municipality=None,
+    custom_system_prompt=None,
+    custom_rerank_prompt=None,
+):
+    global index, INDEX_NAME
+
+    try:
+        from django.conf import settings
+        if settings.SITE_CONFIG:
+            INDEX_NAME = settings.SITE_CONFIG.get_active_dataset_index_name()
+            index = pc.Index(INDEX_NAME)
+    except Exception as e:
+        if debug:
+            print(f"Note: Using default index. Details: {e}")
+
     _is_res_user = is_research_user(user_purpose)
     _is_ug_user = contains_any(user_purpose, UNDERGRAD_TERMS)
+    is_org_user = user_type and user_type.lower() in ["organization", "organisation", "idrottsförening"]
 
     if debug:
         print(f"\n{'#'*60}")
@@ -1584,14 +3137,109 @@ def find_scholarships_v2(user_purpose, gender=None, top_k=DEFAULT_TOP_K, debug=T
         print(f"# Undergrad: {_is_ug_user}")
         print(f"# Research User: {_is_res_user}")
         print(f"# Top-K: {top_k}")
+        print(f"# User Type: {user_type or 'not specified'}")
+        print(f"# Municipality Filter: {municipality_filter} | Municipality: {municipality or 'none'}")
         print(f"{'#'*60}")
+
+    # Base filters (user_type only — no municipality yet)
+    base_filters = {}
+    if user_type:
+        user_type_lower = user_type.lower()
+        if user_type_lower in ["individual", "privatperson", "person"]:
+            base_filters["Kommentar"] = {"$in": ["Flera", "Studier"]}
+        elif user_type_lower in ["organization", "organisation", "idrottsförening"]:
+            base_filters["Kommentar"] = {"$in": ["Flera", "Idrottsförening"]}
+
+    if debug:
+        print(f"Base Filters:\n{json.dumps(base_filters, indent=4, ensure_ascii=False)}\n")
 
     emb_query = expand_user_query_for_embedding(user_purpose)
     query_vector = openai_client.embeddings.create(
         model=EMBEDDING_MODEL, input=emb_query
     ).data[0].embedding
-    res = index.query(vector=query_vector, top_k=top_k, include_metadata=True)
 
+    # -------------------------------------------------------
+    # RETRIEVAL — two paths depending on org + municipality
+    # -------------------------------------------------------
+    if is_org_user and municipality_filter and municipality:
+        resolved_municipality = resolve_municipality(municipality)
+
+        if debug:
+            print(f"[ORG SOFT GEOGRAPHY] Municipality: {municipality} → {resolved_municipality}")
+            print(f"[ORG SOFT GEOGRAPHY] Fetching local pool + national pool separately")
+
+        # POOL 1 — Local: municipality match + org filter
+        local_filters = dict(base_filters)
+        local_filters["Kommun"] = resolved_municipality
+
+        local_res = index.query(
+            vector=query_vector,
+            top_k=50,
+            include_metadata=True,
+            filter=local_filters
+        )
+
+        # POOL 2 — National: org filter only, no municipality restriction
+        national_res = index.query(
+            vector=query_vector,
+            top_k=top_k,
+            include_metadata=True,
+            filter=base_filters if base_filters else None
+        )
+
+        if debug:
+            print(f"[ORG SOFT GEOGRAPHY] Local results: {len(local_res.get('matches', []))}")
+            print(f"[ORG SOFT GEOGRAPHY] National results: {len(national_res.get('matches', []))}")
+
+        # Merge: local first then national, deduplicate by name
+        seen_names = set()
+        merged_matches = []
+
+        for m in local_res.get("matches", []):
+            name = m["metadata"].get("Namn", "")
+            if name not in seen_names:
+                m["_is_local"] = True
+                merged_matches.append(m)
+                seen_names.add(name)
+
+        for m in national_res.get("matches", []):
+            name = m["metadata"].get("Namn", "")
+            if name not in seen_names:
+                m["_is_local"] = False
+                merged_matches.append(m)
+                seen_names.add(name)
+
+        if debug:
+            print(f"[ORG SOFT GEOGRAPHY] Merged pool: {len(merged_matches)} total")
+
+        res = {"matches": merged_matches}
+
+    else:
+        # Original single-query path — individual users and org without municipality
+        filters = dict(base_filters)
+        if municipality_filter and municipality:
+            filters["Kommun"] = resolve_municipality(municipality)
+
+        if debug:
+            print(f"Pinecone Filters:\n{json.dumps(filters, indent=4, ensure_ascii=False)}\n")
+
+        if filters:
+            res = index.query(
+                vector=query_vector,
+                top_k=top_k,
+                include_metadata=True,
+                filter=filters
+            )
+        else:
+            res = index.query(
+                vector=query_vector,
+                top_k=top_k,
+                include_metadata=True
+            )
+
+    # -------------------------------------------------------
+    # Build initial list from matches
+    # -------------------------------------------------------
     initial_list = []
     for m in res.get("matches", []):
         md = m["metadata"]
@@ -1599,7 +3247,8 @@ def find_scholarships_v2(user_purpose, gender=None, top_k=DEFAULT_TOP_K, debug=T
             "Name": md.get("Namn", ""),
             "Purpose": md.get("Ändamål", ""),
             "Study Level": md.get("Utbildningsnivå", ""),
-            "Base Score": round(m["score"], 4)
+            "Base Score": round(m["score"], 4),
+            "_is_local": m.get("_is_local", False),
         }
         for k, v in FIELD_MAP_SV.items():
             if k not in s:
@@ -1614,11 +3263,25 @@ def find_scholarships_v2(user_purpose, gender=None, top_k=DEFAULT_TOP_K, debug=T
     if debug:
         print(f"\n{'='*60}")
         print(f"[PINECONE] Retrieved {len(initial_list)} candidates")
+        local_count = sum(1 for s in initial_list if s.get("_is_local"))
+        if is_org_user and municipality_filter and municipality:
+            print(f"[PINECONE] Local: {local_count} | National: {len(initial_list) - local_count}")
         print(f"{'='*60}")
+
+    # -------------------------------------------------------
+    # PASS 1 — Rules-based filtering
+    # -------------------------------------------------------
     kept_rules = []
     excluded_rules = []
 
     for sch in initial_list:
+        # Gender check runs first — cheapest, most reliable, domain-agnostic
+        if gender:
+            fail_gender, gender_reason = should_exclude_gender_mismatch(sch, gender)
+            if fail_gender:
+                excluded_rules.append((sch, gender_reason))
+                continue
+
         fail_entity, entity_reason = should_exclude_entity_type(sch, user_purpose)
         if fail_entity:
             excluded_rules.append((sch, entity_reason))
@@ -1644,13 +3307,16 @@ def find_scholarships_v2(user_purpose, gender=None, top_k=DEFAULT_TOP_K, debug=T
         for s in kept_rules:
             cls = classify_scholarship(s)
             dm = "[DOMAIN]" if is_domain_match(combined_scholarship_text(s), user_purpose) else "[GENERAL]"
-            print(f"  [+] {dm} [{cls:>8}] {s['Name']}")
+            local_tag = "[LOCAL]" if s.get("_is_local") else "[NATIONAL]"
+            print(f"  [+] {local_tag}{dm}[{cls:>8}] {s['Name']}")
             print(f"      Purpose: {s['Purpose'][:150]}")
         print(f"\n  --- EXCLUDED ---")
         for s, reason in excluded_rules:
             print(f"  [-] {s['Name']} -> {reason}")
-            print(f"      Purpose: {s['Purpose'][:150]}")
 
+    # -------------------------------------------------------
+    # PASS 2 — Semantic threshold
+    # -------------------------------------------------------
     kept_semantic = []
     excluded_semantic = []
 
@@ -1664,41 +3330,96 @@ def find_scholarships_v2(user_purpose, gender=None, top_k=DEFAULT_TOP_K, debug=T
         print(f"\n{'='*60}")
         print(f"[SEMANTIC PASS] INCLUDED ({len(kept_semantic)}) | EXCLUDED ({len(excluded_semantic)})")
         print(f"{'='*60}")
-        for s in kept_semantic:
-            cls = classify_scholarship(s)
-            dm = "[DOMAIN]" if is_domain_match(combined_scholarship_text(s), user_purpose) else "[GENERAL]"
-            print(f"  [+] {dm} [{cls:>8}] {s['Name']} [score={s['Adjusted Score']}]")
-            print(f"      Purpose: {s['Purpose'][:150]}")
-        print(f"\n  --- EXCLUDED ---")
-        for s in excluded_semantic:
-            print(f"  [-] {s['Name']} [score={s['Adjusted Score']}]")
-            print(f"      Purpose: {s['Purpose'][:150]}")
 
-    final_data = sorted(
-        kept_semantic, key=lambda x: x["Adjusted Score"], reverse=True
-    )[:MAX_CANDIDATES_FOR_LLM]
+    # For org soft geography: sort local before national within same score band
+    # For everyone else: sort by adjusted score descending
+    if is_org_user and municipality_filter and municipality:
+        final_data = sorted(
+            kept_semantic,
+            key=lambda x: (not x.get("_is_local", False), -x["Adjusted Score"])
+        )[:MAX_CANDIDATES_FOR_LLM]
+    else:
+        final_data = sorted(
+            kept_semantic,
+            key=lambda x: x["Adjusted Score"],
+            reverse=True
+        )[:MAX_CANDIDATES_FOR_LLM]
 
     if debug:
         print(f"\n{'='*60}")
         print(f"[PRE-LLM] Sending {len(final_data)} candidates to LLM filter")
         print(f"{'='*60}")
 
+    # -------------------------------------------------------
+    # PASS 3 — LLM filtering
+    # -------------------------------------------------------
     if final_data:
         llm_filtered = llm_filter_scholarships(
-            user_purpose, gender, final_data, openai_client, debug=debug
+            user_purpose, gender, final_data, openai_client,
+            debug=debug,
+            custom_system_prompt=custom_system_prompt,
+            user_type=user_type
         )
+
         if len(llm_filtered) < MIN_RESULTS:
             if debug:
-                print(f"\n[SAFETY NET] LLM returned only {len(llm_filtered)} -- padding to {MIN_RESULTS}")
+                print(f"\n[SAFETY NET] LLM returned only {len(llm_filtered)} — padding to {MIN_RESULTS}")
+
             existing_names = {s["Name"] for s in llm_filtered}
-            padding = [s for s in final_data if s["Name"] not in existing_names]
-            final_data = llm_filtered + padding[:MIN_RESULTS - len(llm_filtered)]
+
+            # For org soft geography: prioritise local padding first
+            if is_org_user and municipality_filter and municipality:
+                local_padding = [
+                    s for s in final_data
+                    if s["Name"] not in existing_names
+                    and s.get("_is_local", False)
+                ]
+                national_padding = [
+                    s for s in final_data
+                    if s["Name"] not in existing_names
+                    and not s.get("_is_local", False)
+                ]
+                padding = (local_padding + national_padding)[:MIN_RESULTS - len(llm_filtered)]
+            else:
+                domain_padding = [
+                    s for s in final_data
+                    if s["Name"] not in existing_names
+                    and is_domain_match(combined_scholarship_text(s), user_purpose)
+                ]
+                student_padding = [
+                    s for s in final_data
+                    if s["Name"] not in existing_names
+                    and s["Name"] not in {x["Name"] for x in domain_padding}
+                    and is_strongly_student_facing(combined_scholarship_text(s))
+                ]
+                remaining_padding = [
+                    s for s in final_data
+                    if s["Name"] not in existing_names
+                    and s["Name"] not in {x["Name"] for x in domain_padding}
+                    and s["Name"] not in {x["Name"] for x in student_padding}
+                ]
+                padding = (domain_padding + student_padding + remaining_padding)[:MIN_RESULTS - len(llm_filtered)]
+
+            final_data = llm_filtered + padding
+
+            if debug:
+                print(f"[SAFETY NET] Padded to {len(final_data)} results")
         else:
             final_data = llm_filtered
 
+    # -------------------------------------------------------
+    # PASS 4 — LLM reranking
+    # -------------------------------------------------------
     if use_llm_rerank and len(final_data) > 1:
+        if debug:
+            print(f"\n[LLM RERANK] Received {len(final_data)} scholarships to rank")
+
         final_data = rerank_with_llm(
-            user_purpose, final_data, openai_client, debug=debug
+            user_purpose, final_data, openai_client,
+            debug=debug,
+            custom_rerank_prompt=custom_rerank_prompt,
+            user_type=user_type,
+            gender=gender
         )
 
     if debug:
@@ -1707,11 +3428,11 @@ def find_scholarships_v2(user_purpose, gender=None, top_k=DEFAULT_TOP_K, debug=T
         print(f"{'='*60}")
         for i, s in enumerate(final_data[:MIN_RESULTS]):
             cls = classify_scholarship(s)
-            print(f"  {i+1}. [{cls:>8}] {s['Name']}")
+            local_tag = "[LOCAL]" if s.get("_is_local") else "[NATIONAL]"
+            print(f"  {i+1}. {local_tag}[{cls:>8}] {s['Name']}")
             print(f"     Purpose: {s['Purpose'][:200]}")
 
     return final_data[:MIN_RESULTS]
-
 
 def run_single_audit(query: str, gender: str = None, debug: bool = False) -> Dict:
     results = find_scholarships_v2(query, gender=gender, debug=debug)
@@ -1862,6 +3583,33 @@ def compare_audits(before: Dict, after: Dict):
 
 
 
+# def format_scholarship_json(scholarship_list, output_language="en"):
+#     formatted_list = []
+#     non_translatable = {
+#         "Email", "Website", "Phone", "Postal Code",
+#         "Epost", "Websida", "Telefon", "Postnr",
+#         "Municipality", "Kommun",
+#         "City", "Stad",
+#         "County", "Län",
+#         "Main Address", "Huvudadress",
+#     }
+#     for sch in scholarship_list:
+#         entry = {}
+#         for k, v in sch.items():
+#             if k in ["Base Score", "Relevance Score", "Entity Bonus", "Adjusted Score"]:
+#                 continue
+#             final_k = FIELD_MAP_SV.get(k, k) if output_language.lower() == "sv" else k
+#             if k in non_translatable or not isinstance(v, str):
+#                 entry[final_k] = v
+#             else:
+#                 entry[final_k] = (
+#                     safe_translate(v, "sv", "en")
+#                     if output_language.lower() == "en"
+#                     else v
+#                 )
+#         formatted_list.append(entry)
+#     return formatted_list
+    #return json.dumps(formatted_list, indent=4, ensure_ascii=False)
 def format_scholarship_json(scholarship_list, output_language="en"):
     formatted_list = []
     non_translatable = {
@@ -1877,6 +3625,15 @@ def format_scholarship_json(scholarship_list, output_language="en"):
         for k, v in sch.items():
             if k in ["Base Score", "Relevance Score", "Entity Bonus", "Adjusted Score"]:
                 continue
+            
+            # Always render Assets as integer — DB stores as float e.g. 7235778.0
+            if k in ("Assets", "Tillgångar"):
+                try:
+                    entry[FIELD_MAP_SV.get(k, k) if output_language.lower() == "sv" else k] = int(float(v)) if v else v
+                except (ValueError, TypeError):
+                    entry[FIELD_MAP_SV.get(k, k) if output_language.lower() == "sv" else k] = v
+                continue
+            
             final_k = FIELD_MAP_SV.get(k, k) if output_language.lower() == "sv" else k
             if k in non_translatable or not isinstance(v, str):
                 entry[final_k] = v
@@ -1889,3 +3646,173 @@ def format_scholarship_json(scholarship_list, output_language="en"):
         formatted_list.append(entry)
     return formatted_list
 
+
+def get_predefined_scholarships_by_level(predefined_queryset, study_level=None, subject=None, role=None, sport=None, debug=False):
+    """
+    Intelligently filters predefined scholarships based on study level for individuals.
+    
+    Hierarchy for INDIVIDUALS:
+      1. Scholarships with subject='always' (filtered by study_level field)
+      2. Then subject-specific scholarships (filtered by study_level field)
+      3. Then AI-matched scholarships
+    
+    For ORGANIZATIONS:
+      - Keep existing logic (based on sport)
+    
+    Args:
+        predefined_queryset: Django QuerySet of PreDefinedScholarship objects
+        study_level: User's study level (e.g., 'undergraduate', 'master', 'phd')
+        subject: User's subject/program (e.g., 'economics', 'engineering', 'law')
+        role: User's role ('Individual', 'Organisation', 'Privatperson', 'Organisation')
+        sport: User's sport (for organizations)
+        debug: Whether to print debug info
+    
+    Returns:
+        Tuple of (predefined_always, predefined_filtered) QuerySets
+    """
+    from django.db.models import Q
+    
+    # Normalize role input
+    is_individual = role and role.lower() in ['individual', 'privatperson']
+    is_org = role and role.lower() in ['organisation', 'organization']
+    
+    if debug:
+        print(f"\n[PREDEFINED STUDY LEVEL FILTER]")
+        print(f"  Role: {role} (is_individual={is_individual})")
+        print(f"  Study Level: {study_level}")
+        print(f"  Subject: {subject}")
+        print(f"  Sport: {sport}")
+    
+    if is_individual:
+        # For individuals: filter by study level
+        # Determine which study level to filter by
+        study_level_filter = None
+        if study_level:
+            study_level_lower = study_level.lower()
+            
+            if any(t in study_level_lower for t in [
+                'undergraduate', 'bachelor', 'kandidat', 'kandidatnivå', 'grundnivå'
+            ]):
+                    study_level_filter = 'undergraduate'
+            elif any(t in study_level_lower for t in [
+                    'master', 'postgraduate', 'masternivå', 'magister'
+            ]):
+                    study_level_filter = 'master'
+            elif any(t in study_level_lower for t in [
+                    'phd', 'doctoral', 'doktorand', 'forskarutbildning',
+                    'doktorsexamen', 'licentiat'
+            ]):
+                    study_level_filter = 'phd'
+        
+        # Filter "always" scholarships by study level
+        # Include if: study_level='all' OR study_level matches user's level OR study_level is null/empty
+        predefined_always = predefined_queryset.filter(
+            subject='always'
+        ).filter(
+            Q(study_level__isnull=True) | 
+            Q(study_level='') | 
+            Q(study_level='all') |
+            Q(study_level=study_level_filter)
+        )
+        
+        # Start with non-always scholarships
+        predefined_filtered = predefined_queryset.exclude(subject='always')
+        
+        # Map study_level_filter to applicable subjects
+        applicable_subjects = []
+        if study_level_filter == 'undergraduate':
+            # Undergraduate subjects
+            applicable_subjects = [
+                'engineering_technology',
+                'economics_business',
+                'medicine_health',
+                'cs_it_data',
+                'education_pedagogy',
+                'psychology_behavioral',
+                'law_political',
+                'environment_sustainability',
+                'design_architecture_arts',
+                'biology_chemistry_life',
+            ]
+        elif study_level_filter == 'master':
+            # Master's subjects
+            applicable_subjects = [
+                'public_health_epidemiology',
+                'eng_tech_advanced',
+                'business_management',
+                'cs_digital_data_advanced',
+                'education_didactics',
+                'environment_urban',
+                'life_science_biotech',
+                'law_llm',
+                'design_creative_advanced',
+                'social_sciences',
+            ]
+        elif study_level_filter == 'phd':
+            # PhD subjects
+            applicable_subjects = [
+                'phd_engineering_technology',
+                'phd_economics',
+                'phd_medicine',
+                'phd_law',
+                'phd_arts_culture',
+            ]
+        
+        # Filter by applicable subjects
+        if applicable_subjects:
+            predefined_filtered = predefined_filtered.filter(
+                subject__in=applicable_subjects
+            ).filter(
+                Q(study_level__isnull=True) | 
+                Q(study_level='') | 
+                Q(study_level='all') |
+                Q(study_level=study_level_filter)
+            )
+        else:
+            # For unknown level, return only "always"
+            predefined_filtered = predefined_filtered.none()
+        
+        # Additionally filter by subject if provided
+        if subject and subject != 'always':
+            predefined_filtered = predefined_filtered.filter(subject=subject)
+        
+        if debug:
+            print(f"  -> Study Level Filter: {study_level_filter}")
+            print(f"  -> Individual: filtered to {predefined_filtered.count()} subject-specific + {predefined_always.count()} always")
+    
+    elif is_org:
+        # For organizations: keep sport filtering (unchanged from original logic)
+        predefined_always = predefined_queryset.filter(subject='always')
+        predefined_filtered = predefined_queryset.exclude(subject='always')
+        
+        if debug:
+            print(f"  -> Organization: using sport-based filtering (original logic)")
+    else:
+        # Unknown role: return empty
+        predefined_always = predefined_queryset.none()
+        predefined_filtered = predefined_queryset.none()
+        
+        if debug:
+            print(f"  -> Unknown role: returning empty")
+    
+    return predefined_always, predefined_filtered
+
+# if __name__ == "__main__":
+#     results = find_scholarships_v2(
+#         user_purpose="I am interested to law related subjects for my undergraduate program",
+#         #subject="Economics, Business Administration & Management",
+#         user_type="Individual",
+#         #elite_athlete=False,
+#         #sport="Ice Hockey",
+#         municipality="Stockholm",
+#         municipality_filter=False,
+#         #study_level="university,Undergraduate",
+#         gender="male",
+#         #language="en",
+#         top_k=200,
+#         debug=True,
+#         use_llm_rerank=True
+#     )
+
+#     formatted = format_scholarship_json(results, output_language="en")
+#     print(formatted)
