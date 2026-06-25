@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from stipo54 import (
+from .stipo54 import (
     find_scholarships_v2 as _find_scholarships_v2,
     format_scholarship_json as _format_scholarship_json,
     get_predefined_scholarships_by_level,
