@@ -86,11 +86,7 @@ def build_report_for_application(application):
     print("DEBUGING ROLE *******************  ", application.form_data.get('elite_athlete'))
     report_data = Stipo54.find_scholarships_v2(
         user_purpose=application.form_data['purpose_of_funding'],
-        user_type=application.form_data['role'],
-        municipality=application.form_data['municipality'],
-        gender=application.form_data.get('gender'),
-        language=language,
-        municipality_filter=application.form_data.get('include_municipality_filter', False)
+        gender=application.form_data.get('gender')
     )
 
     report_data = Stipo54.format_scholarship_json(
