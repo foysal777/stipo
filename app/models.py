@@ -1,4 +1,4 @@
-#server side code 8=================================================================================
+#============================================ server side code =================================================================================
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -416,3 +416,57 @@ class PreDefinedScholarship(models.Model):
     organization_postal_code = models.TextField()
     organization_city = models.TextField()
     organization_county = models.TextField()
+
+
+class EmailTemplate(models.Model):
+    # OTP Templates
+    otp_subject_en = models.CharField(
+        max_length=255,
+        default="Your scholarship OTP code",
+        verbose_name="OTP Email Subject (EN)"
+    )
+    otp_body_en = models.TextField(
+        default="Hello,\n\nUse this OTP code to continue your scholarship search:\n\n{otp}\n\nThank you.",
+        verbose_name="OTP Email Body (EN)",
+        help_text="Use {otp} to insert the one time passcode."
+    )
+    otp_subject_sv = models.CharField(
+        max_length=255,
+        default="Din OTP-kod för stipendiesökning",
+        verbose_name="OTP Email Subject (SV)"
+    )
+    otp_body_sv = models.TextField(
+        default="Hej,\n\nAnvänd denna OTP-kod för att fortsätta din stipendiesökning:\n\n{otp}\n\nTack.",
+        verbose_name="OTP Email Body (SV)",
+        help_text="Use {otp} to insert the one time passcode."
+    )
+
+    # Report Templates
+    report_subject_en = models.CharField(
+        max_length=255,
+        default="Your scholarship report is ready",
+        verbose_name="Report Email Subject (EN)"
+    )
+    report_body_en = models.TextField(
+        default="Hello,\n\nYour scholarship report is attached. Please review the attached file for the matching scholarships.\n\nReport file: {report_file_name}\n\nBest regards,\nScholarship team",
+        verbose_name="Report Email Body (EN)",
+        help_text="Use {report_file_name} to insert the attached report file name."
+    )
+    report_subject_sv = models.CharField(
+        max_length=255,
+        default="Din stipendierapport är klar",
+        verbose_name="Report Email Subject (SV)"
+    )
+    report_body_sv = models.TextField(
+        default="Hej,\n\nDin stipendierapport är bifogad. Granska den bifogade filen för matchade stipendier.\n\nRapportfil: {report_file_name}\n\nVänliga hälsningar,\nStipendieteamet",
+        verbose_name="Report Email Body (SV)",
+        help_text="Use {report_file_name} to insert the attached report file name."
+    )
+
+    class Meta:
+        verbose_name = "Email Template"
+        verbose_name_plural = "Email Templates"
+
+    def __str__(self):
+        return "Email Templates Configuration"
+

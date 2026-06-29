@@ -2,10 +2,10 @@ import os as _os
 
 from django.dispatch import receiver
 from django.db.models.signals import post_save
-from django.core.mail import EmailMessage
+from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.conf import settings
 
-from .models import ScholarshipApplicant, SiteConfig
+from .models import ScholarshipApplicant, SiteConfig, EmailTemplate
 from app.embed1 import update_pinecone_embeddings
 
 
@@ -26,16 +26,55 @@ def handle_application_save(sender, instance, created, **kwargs):
         pdf_path = instance.report_file.path
 
         # --- 1. Build and send the email ---
-        subject = "Alegable Scholarships"
-        body = ""
-        email_msg = EmailMessage(
+        language = 'sv'
+        if instance.form_data and isinstance(instance.form_data, dict):
+            language = instance.form_data.get('language', 'sv')
+
+        try:
+            email_template = EmailTemplate.objects.first()
+        except Exception:
+            email_template = None
+
+        if email_template:
+            if language == 'en':
+                subject = email_template.report_subject_en
+                body_template = email_template.report_body_en
+            else:
+                subject = email_template.report_subject_sv
+                body_template = email_template.report_body_sv
+        else:
+            if language == 'en':
+                subject = "Your scholarship report is ready"
+                body_template = "Hello,\n\nYour scholarship report is attached. Please review the attached file for the matching scholarships.\n\nReport file: {report_file_name}\n\nBest regards,\nScholarship team"
+            else:
+                subject = "Din stipendierapport är klar"
+                body_template = "Hej,\n\nDin stipendierapport är bifogad. Granska den bifogade filen för matchade stipendier.\n\nRapportfil: {report_file_name}\n\nVänliga hälsningar,\nStipendieteamet"
+
+        report_file_name = _os.path.basename(instance.report_file.name)
+        plain_body = body_template.replace('{report_file_name}', report_file_name)
+        
+        # Format HTML body for modern display
+        html_body = f"""
+        <div style="font-family: Arial, sans-serif; padding: 25px; max-width: 600px; margin: 0 auto; line-height: 1.6; color: #333; border: 1px solid #e8eaed; border-radius: 12px; background-color: #ffffff;">
+            <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="color: #1a73e8; margin: 0;">{subject}</h2>
+            </div>
+            <div style="font-size: 16px; color: #444;">
+                {plain_body.replace('\n', '<br>')}
+            </div>
+        </div>
+        """
+
+        email_msg = EmailMultiAlternatives(
             subject=subject,
-            body=body,
+            body=plain_body,
             from_email=settings.EMAIL_HOST_USER,
             to=[instance.email],
         )
+        email_msg.attach_alternative(html_body, "text/html")
+
         with open(pdf_path, "rb") as pdf:
-            email_msg.attach("document.pdf", pdf.read(), "application/pdf")
+            email_msg.attach(report_file_name, pdf.read(), "application/pdf")
 
         print("SENDING FILE>>>")
         email_msg.send()

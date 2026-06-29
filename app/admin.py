@@ -9,7 +9,7 @@ from django.db import models
 from django.contrib import admin
 from .models import (
     SiteConfig, FAQ, ScholarshipApplicant,
-    Review, Coupon, PreDefinedScholarship
+    Review, Coupon, PreDefinedScholarship, EmailTemplate
 )
  
  
@@ -157,3 +157,32 @@ class PreDefinedScholarshipAdmin(admin.ModelAdmin):
  
     search_fields = ['subject']
     pass
+
+
+@admin.register(EmailTemplate)
+class EmailTemplateAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return not EmailTemplate.objects.exists()
+ 
+    def changelist_view(self, request, extra_context=None):
+        obj = EmailTemplate.objects.first()
+        if obj:
+            url = reverse(
+                'admin:%s_%s_change' % (obj._meta.app_label, obj._meta.model_name),
+                args=[obj.pk]
+            )
+            return redirect(url)
+        app_label = EmailTemplate._meta.app_label
+        model_name = EmailTemplate._meta.model_name
+        return redirect(reverse(f'admin:{app_label}_{model_name}_add'))
+
+    fieldsets = (
+        ('Email Templates - OTP', {
+            'fields': ('otp_subject_en', 'otp_body_en', 'otp_subject_sv', 'otp_body_sv'),
+            'description': 'OTP email templates for English and Swedish. Use {otp} in the body text.'
+        }),
+        ('Email Templates - Final Report', {
+            'fields': ('report_subject_en', 'report_body_en', 'report_subject_sv', 'report_body_sv'),
+            'description': 'Final report email templates for English and Swedish. Use {report_file_name} in the body text.'
+        }),
+    )
