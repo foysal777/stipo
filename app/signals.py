@@ -52,7 +52,8 @@ def handle_application_save(sender, instance, created, **kwargs):
 
         report_file_name = _os.path.basename(instance.report_file.name)
         plain_body = body_template.replace('{report_file_name}', report_file_name)
-        
+        plain_body_html = plain_body.replace('\n', '<br>')
+
         # Format HTML body for modern display
         html_body = f"""
         <div style="font-family: Arial, sans-serif; padding: 25px; max-width: 600px; margin: 0 auto; line-height: 1.6; color: #333; border: 1px solid #e8eaed; border-radius: 12px; background-color: #ffffff;">
@@ -60,7 +61,7 @@ def handle_application_save(sender, instance, created, **kwargs):
                 <h2 style="color: #1a73e8; margin: 0;">{subject}</h2>
             </div>
             <div style="font-size: 16px; color: #444;">
-                {plain_body.replace('\n', '<br>')}
+                {plain_body_html}
             </div>
         </div>
         """
