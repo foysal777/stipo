@@ -1085,6 +1085,27 @@ def faq_list(request):
         "faqs_sv": faqs_sv
     })
 
+@api_view(['post'])
+def contact_us(request):
+    name = request.data.get('name')
+    email = request.data.get('email')
+    message_body = request.data.get('message_body')
+
+    if not name or not email or not message_body:
+        raise ValidationError({"error": "name, email, and message_body are required"})
+
+    subject = f"Contact Form Submission from {name}"
+    message_text = f"Name: {name}\nEmail: {email}\n\nMessage:\n{message_body}"
+
+    send_mail(
+        subject=subject,
+        message=message_text,
+        from_email=settings.EMAIL_HOST_USER,
+        recipient_list=["kontakt@stipendieportalen.se"]
+    )
+
+    return Response({"message": "Message sent successfully"})
+
 
 
 

@@ -7,7 +7,8 @@ from .views import (
     generate_data,
     ReviewView,
     faq_list,
-    send_verification_code
+    send_verification_code,
+    contact_us
 )
 
 urlpatterns = [
@@ -18,5 +19,6 @@ urlpatterns = [
     path('payment_callback/', stripe_payment_webhook),
     path('generate_data/', generate_data),
     path('review/', ReviewView.as_view()),
-    path('faqs/', faq_list)
+    path('faqs/', faq_list),
+    path('contact/', contact_us)
 ]
