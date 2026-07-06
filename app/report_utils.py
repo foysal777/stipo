@@ -96,11 +96,6 @@ def create_pdf(data, user_profile, watermark_path, output_path):
     story.append(Paragraph(title, styles["Title"]))
     story.append(Spacer(1, 12))
 
-    if user_profile.get('language', '') == 'sv':
-        story.append(Paragraph("Rapport om studentbehörighet", styles["Title"]))
-    else:
-        story.append(Paragraph("Student Eligibility Report", styles["Title"]))
-    story.append(Spacer(1, 12))
 
     # User Profile Section
     if user_profile.get('language', '') == 'sv':
