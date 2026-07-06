@@ -84,9 +84,17 @@ def create_pdf(data, user_profile, watermark_path, output_path):
     doc = SimpleDocTemplate(output_path, pagesize=A4)
     styles = getSampleStyleSheet()
     story = []
-
+    
     # story.append(PageBreak())
     # Title
+    role = str(user_profile.get('role', '')).lower()
+    is_org = 'organ' in role
+    if user_profile.get('language', '') == 'sv':
+        title = "Behörighetsrapport för organisation" if is_org else "Rapport om studentbehörighet"
+    else:
+        title = "Eligibility report for organization" if is_org else "Student Eligibility Report"
+    story.append(Paragraph(title, styles["Title"]))
+    story. Append(Spacer(1, 12))
 
     if user_profile.get('language', '') == 'sv':
         story.append(Paragraph("Rapport om studentbehörighet", styles["Title"]))
