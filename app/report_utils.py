@@ -94,7 +94,7 @@ def create_pdf(data, user_profile, watermark_path, output_path):
     else:
         title = "Eligibility report for organization" if is_org else "Student Eligibility Report"
     story.append(Paragraph(title, styles["Title"]))
-    story. Append(Spacer(1, 12))
+    story.append(Spacer(1, 12))
 
     if user_profile.get('language', '') == 'sv':
         story.append(Paragraph("Rapport om studentbehörighet", styles["Title"]))
