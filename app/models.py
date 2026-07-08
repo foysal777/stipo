@@ -24,10 +24,34 @@ class ScholarshipApplicant(models.Model):
     report_file = models.FileField(upload_to=generate_pdf_path, null=True, blank=True)
     pdf_created_at = models.DateTimeField(null=True, blank=True, help_text="When the PDF was generated. Used for 24-hour auto-deletion.")
     otp = models.CharField(default=create_otp)
+    otp_created_at = models.DateTimeField(null=True, blank=True)
+    otp_send_count = models.PositiveIntegerField(default=0)
     success_count = models.PositiveIntegerField(default=0)
 
     def refresh_otp(self):
         self.otp = create_otp()
+        self.otp_created_at = timezone.now()
+        self.otp_send_count = 0
+
+    def can_send_otp(self):
+        if self.otp_send_count >= 5:
+            if self.otp_created_at and (timezone.now() - self.otp_created_at).total_seconds() <= 3600:
+                return False
+            else:
+                self.otp_send_count = 0
+                self.save()
+        return True
+
+    def generate_new_otp(self):
+        self.otp = create_otp()
+        self.otp_created_at = timezone.now()
+        self.otp_send_count += 1
+        self.save()
+
+    def is_otp_expired(self):
+        if not self.otp_created_at:
+            return True
+        return (timezone.now() - self.otp_created_at).total_seconds() > 600
 
     def __str__(self):
         return f"{self.email}"

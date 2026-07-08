@@ -207,7 +207,6 @@ def call_openai(prompt):
 
     )
 
-    print(response.choices[0].message.content)
     return response.choices[0].message.content
  
 def extract_json_block(mixed_text):
@@ -244,9 +243,7 @@ def find_scholarships_individual(df, kommun, user_info, top_n=20, detected_langu
 
     payload["matching_scholarships"] = payload["matching_scholarships"][:top_n]
     
-    print("DEBUG LEN", len(payload['matching_scholarships']))
     payload = translate_results_to_english(payload, detected_language.lower())
-    print("AFTER AFFECT DEBUG LEN", len(payload['matching_scholarships']))
 
     return payload
  

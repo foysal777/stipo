@@ -493,38 +493,56 @@ def submit_application(request):
     # Normalize municipality and other form fields on submission
     form_data = normalize_form_data(form_data)
 
-    # if application_type in ('organization', 'Organisation'):
-    #     profile = {
-    #         f"{application_type}": request.data.get('organization_name'),
-
-    #     }
+    # Check OTP rate limit if applicant already exists
+    applicant = ScholarshipApplicant.objects.filter(email=email).first()
+    if applicant:
+        if not applicant.can_send_otp():
+            language = form_data.get('language', 'sv')
+            if language == 'en':
+                err_msg = "OTP send limit exceeded. Please try again after 1 hour."
+            else:
+                err_msg = "Gränsen för att skicka engångskod har överskridits. Försök igen om 1 timme."
+            raise ValidationError({"error": err_msg})
 
     application, _created = ScholarshipApplicant.objects.update_or_create(
-        email=request.data.get('email'),
+        email=email,
         defaults={
             "form_data": form_data
         }
     )
     application.admin_verified = bool(SITE_CONFIG and not SITE_CONFIG.admin_check)
     application.email_verified = False
-    print("DEBUG ADMIN VER...: ", application.admin_verified)
     
+    application.generate_new_otp()
     send_otp_email(application, application.email)
     
-    application.save()
     return Response({"msg": "your form is submitted"})
 
 
 @api_view(['post'])
 def send_verification_code(request, email):
-    # email = request.data.get('email')
     application = get_object_or_404(ScholarshipApplicant, email=email)
+    
+    language = 'sv'
+    if application.form_data and isinstance(application.form_data, dict):
+        language = application.form_data.get('language', 'sv')
+
+    if not application.can_send_otp():
+        if language == 'en':
+            err_msg = "OTP send limit exceeded. Please try again after 1 hour."
+        else:
+            err_msg = "Gränsen för att skicka engångskod har överskridits. Försök igen om 1 timme."
+        raise ValidationError({"error": err_msg})
+
+    application.generate_new_otp()
     send_otp_email(application, email)
-    return Response({
-        "message": "a message with a verification code"
-                   " has been sent to your email."
-    })
-    pass
+    
+    if language == 'en':
+        msg = "A message with a verification code has been sent to your email."
+    else:
+        msg = "Ett meddelande med en verifieringskod har skickats till din e-post."
+        
+    return Response({"message": msg})
 
 
 @api_view(['post'])
@@ -532,26 +550,35 @@ def verify_otp(request):
     email = request.data.get('email')
     otp = request.data.get('otp')
 
-    print("DEBUG PAYLOD OTP:")
-    print(email)
-    print(otp)
     if email is None:
         raise ValidationError({"error": "email is required"})
 
     if otp is None:
         raise ValidationError({"error": "otp is required"})
+        
     application = get_object_or_404(ScholarshipApplicant, email=email)
-    print('lt: ', application.otp)
+    
+    language = 'sv'
+    if application.form_data and isinstance(application.form_data, dict):
+        language = application.form_data.get('language', 'sv')
+
+    # Check OTP expiration (10 min)
+    if application.is_otp_expired():
+        if language == 'en':
+            err_msg = "OTP has expired. Please request a new one."
+        else:
+            err_msg = "Engångskoden (OTP) har gått ut. Vänligen begär en ny."
+        raise ValidationError({"error": err_msg})
 
     if otp != application.otp:
-        raise ValidationError({"error": "invalid otp"})
-        pass
+        if language == 'en':
+            err_msg = "Invalid OTP code."
+        else:
+            err_msg = "Ogiltig engångskod."
+        raise ValidationError({"error": err_msg})
+
     application.email_verified = True
-    # ai_utils.find_scholarships(
-    #     user_data
-    # )
     application.refresh_otp()
-    # application.email_verified=True
 
     verify_token = jwt.encode({
             'email': application.email,
@@ -592,8 +619,6 @@ def generate_data(request):
 
     location = application.form_data.get('municipality')
     language = application.form_data['language']
-    print(F"DEBUGING LANGUAGE: {language}")
-    
 
     # report_data = ai_utils.find_scholarships(
     #     settings.DATASET_PATH,
@@ -609,9 +634,7 @@ def generate_data(request):
             else application.form_data.get('education_level_other')
     )
 
-    print("DEBUGING ROLE *******************  ", application.form_data['role'])
-    print("DEBUGING ROLE *******************  ", application.form_data['elite_athlete'])
-    
+
     # Get SiteConfig to retrieve custom prompts if they exist
     site_config = SiteConfig.objects.first()
     user_type = application.form_data['role']
@@ -633,7 +656,7 @@ def generate_data(request):
         gender=application.form_data.get('gender'),
         language=application.form_data['language'],
         municipality_filter=application.form_data.get('include_municipality_filter', False),
-        debug=True,  # Enable to see all filtering steps in terminal
+        debug=False,  # Enable to see all filtering steps in terminal
         use_llm_rerank=True,
         custom_system_prompt=custom_system_prompt,
         custom_rerank_prompt=custom_rerank_prompt
@@ -674,11 +697,7 @@ def generate_data(request):
         education_parts.append(education_level_other)
     education_str = ' '.join(education_parts).lower()
     
-    print(f"\n[SUBMIT_APPLICATION - DEBUG SUBJECT MAPPING]")
-    print(f"  education_level_option: {education_level_option} (type: {type(education_level_option).__name__})")
-    print(f"  education_level_other: {education_level_other}")
-    print(f"  education_str: {education_str}")
-    
+
     # Detect study level first — subject mapping depends on it
     study_level_lower = study_level.lower()
     if any(t in study_level_lower for t in [
@@ -768,11 +787,7 @@ def generate_data(request):
             # For organization PhD applicants, no subject filtering
             subject = None
 
-    print(f"\n[SUBJECT MAPPING DEBUG]")
-    print(f"  education_str: {education_str}")
-    print(f"  detected_level: {detected_level}")
-    print(f"  subject (mapped): {subject}")
-    
+
     # If user selected something but no match was found, only show "always" scholarships
     # This prevents irrelevant subject scholarships from appearing
     no_subject_match = (education_level_option or education_level_other) and subject is None
@@ -835,15 +850,6 @@ def generate_data(request):
         # Exclude "always" from the filtered set since it's handled separately
         pass
 
-    # Debug: show what scholarships are returned
-    print(f"\n[SUBMIT_APPLICATION - PREDEFINED SCHOLARSHIPS RESULT]")
-    print(f"  Role: {application.form_data['role']}")
-    print(f"  predefined_always count: {predefined_always.count()}")
-    print(f"  predefined_filtered count: {predefined_filtered.count()}")
-    if predefined_filtered.count() > 0:
-        print(f"  First filtered scholarship subject: {predefined_filtered.first().subject}")
-
-
     # Combine AI results with predefined scholarships
     # Combine AI results with predefined scholarships using language-aware serializer
     output_language = application.form_data.get('language', 'en')
@@ -904,8 +910,6 @@ def generate_payment_link(request, email, method):
             if not cpn.is_usable():
                 raise ValidationError({"error": "this coupon is no longer available"})
             
-            print(cpn)
-            print(cpn.discount)
             discount = cpn.discount
             
             # Track coupon usage
@@ -913,9 +917,7 @@ def generate_payment_link(request, email, method):
             cpn.times_used += 1
             cpn.last_used = tz.now()
             cpn.save()
-            print(f"✓ Coupon {cpn.code} used (Total uses: {cpn.times_used})")
         else:
-            print(coupon)
             raise ValidationError({"error": "invalid coupon"})
 
     SITE_CONFIG = settings.SITE_CONFIG
@@ -946,8 +948,7 @@ def generate_payment_link(request, email, method):
     STD_PRICE = 299
     PHD_PRICE = 599
     ORG_PRICE = 1599
-    print(application.form_data)
-    
+
     # Check PhD FIRST (before general individual check) — use detected_level for accurate Swedish support
     if application.form_data.get('role', "").lower() in ['privatperson', 'individual'] and detected_level == 'phd':
         price = PHD_PRICE
@@ -956,8 +957,6 @@ def generate_payment_link(request, email, method):
     else:
         price = ORG_PRICE
 
-    print(discount)
-    print(price)
     price = price - price*(discount/100)
     session = stripe.checkout.Session.create(
       success_url=success_url if success_url else "https://example.com/success",

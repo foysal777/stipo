@@ -1,6 +1,13 @@
-
 from dotenv import load_dotenv
 load_dotenv()
+
+import builtins
+import sys
+
+# Silence print statements during server run to keep terminal clean
+# but allow them if running tests or interactive shells
+if not any(arg in sys.argv for arg in ['test', 'shell']):
+    builtins.print = lambda *args, **kwargs: None
 
 from pathlib import Path
 import os
@@ -17,7 +24,7 @@ print("\n\nDEBUG REPORT DIR: ", BASE_DIR)
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = [
     'stipendieportalen.se',
@@ -26,7 +33,9 @@ ALLOWED_HOSTS = [
     'localhost',
     '127.0.0.1',
 ]
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS_ALLOW_ALL_ORIGINS = True
+
+CORS_ALLOW_ALL_ORIGINS = ['stipendieportalen.se','api.stipendieportalen.se']
 CORS_ALLOW_HEADERS = (
     "accept",
     "authorization",
