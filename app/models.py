@@ -3,12 +3,12 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-import random
+import secrets
 import uuid
 
 
 def create_otp(length: int = 6):
-    return ''.join(random.choices('0123456789', k=length))
+    return ''.join(secrets.choice('0123456789') for _ in range(length))
 
 def generate_pdf_path(instance, file_name):
     return f"report-{str(uuid.uuid4())}.pdf"
@@ -26,14 +26,25 @@ class ScholarshipApplicant(models.Model):
     otp = models.CharField(default=create_otp)
     otp_created_at = models.DateTimeField(null=True, blank=True)
     otp_send_count = models.PositiveIntegerField(default=0)
+    otp_failed_attempts = models.PositiveIntegerField(default=0)
+    otp_locked_until = models.DateTimeField(null=True, blank=True)
     success_count = models.PositiveIntegerField(default=0)
 
     def refresh_otp(self):
         self.otp = create_otp()
         self.otp_created_at = timezone.now()
         self.otp_send_count = 0
+        self.otp_failed_attempts = 0
+        self.otp_locked_until = None
+
+    def is_otp_locked(self):
+        if self.otp_locked_until and self.otp_locked_until > timezone.now():
+            return True
+        return False
 
     def can_send_otp(self):
+        if self.is_otp_locked():
+            return False
         if self.otp_send_count >= 5:
             if self.otp_created_at and (timezone.now() - self.otp_created_at).total_seconds() <= 3600:
                 return False
@@ -46,6 +57,8 @@ class ScholarshipApplicant(models.Model):
         self.otp = create_otp()
         self.otp_created_at = timezone.now()
         self.otp_send_count += 1
+        self.otp_failed_attempts = 0
+        self.otp_locked_until = None
         self.save()
 
     def is_otp_expired(self):

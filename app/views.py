@@ -5,7 +5,7 @@ load_dotenv()
 import jwt
 import json
 import os
-
+from rest_framework import status 
 import uuid
 import datetime
 from django.shortcuts import render
@@ -547,6 +547,7 @@ def send_verification_code(request, email):
 
 @api_view(['post'])
 def verify_otp(request):
+    from django.utils import timezone
     email = request.data.get('email')
     otp = request.data.get('otp')
 
@@ -562,6 +563,14 @@ def verify_otp(request):
     if application.form_data and isinstance(application.form_data, dict):
         language = application.form_data.get('language', 'sv')
 
+    # Check if locked out
+    if application.is_otp_locked():
+        if language == 'en':
+            err_msg = "Too many failed attempts. Please try again later."
+        else:
+            err_msg = "För många misslyckade försök. Försök igen senare."
+        raise ValidationError({"error": err_msg})
+
     # Check OTP expiration (10 min)
     if application.is_otp_expired():
         if language == 'en':
@@ -571,10 +580,21 @@ def verify_otp(request):
         raise ValidationError({"error": err_msg})
 
     if otp != application.otp:
+        application.otp_failed_attempts += 1
+        if application.otp_failed_attempts >= 5:
+            application.otp_locked_until = timezone.now() + timezone.timedelta(minutes=15)
+            application.save()
+            if language == 'en':
+                err_msg = "Too many failed attempts. You have been locked out for 15 minutes."
+            else:
+                err_msg = "För många misslyckade försök. Du har blivit spärrad i 15 minuter."
+            raise ValidationError({"error": err_msg})
+        
+        application.save()
         if language == 'en':
-            err_msg = "Invalid OTP code."
+            err_msg = f"Invalid OTP code. {5 - application.otp_failed_attempts} attempts remaining."
         else:
-            err_msg = "Ogiltig engångskod."
+            err_msg = f"Ogiltig engångskod. {5 - application.otp_failed_attempts} försök återstår."
         raise ValidationError({"error": err_msg})
 
     application.email_verified = True

@@ -35,7 +35,19 @@ ALLOWED_HOSTS = [
 ]
 # CORS_ALLOW_ALL_ORIGINS = True
 
-CORS_ALLOW_ALL_ORIGINS = ['stipendieportalen.se','api.stipendieportalen.se']
+CORS_ALLOW_ALL_ORIGINS = False 
+
+CORS_ALLOWED_ORIGINS = [ 
+
+    'https://stipendieportalen.se', 
+
+    'https://www.stipendieportalen.se', 
+
+    'https://app.stipendieportalen.se', 
+
+] 
+
+
 CORS_ALLOW_HEADERS = (
     "accept",
     "authorization",
@@ -109,13 +121,22 @@ WSGI_APPLICATION = 'STEPO_BACKEND.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+import socket
+
+postgres_host = os.environ.get('POSTGRES_HOST', 'db')
+if postgres_host == 'db':
+    try:
+        socket.gethostbyname('db')
+    except socket.gaierror:
+        postgres_host = '127.0.0.1'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': os.environ.get('POSTGRES_DB', 'stepo_db'),
         'USER': os.environ.get('POSTGRES_USER', 'stepo_user'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
-        'HOST': os.environ.get('POSTGRES_HOST', 'db'),
+        'HOST': postgres_host,
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
     }
 }
@@ -201,6 +222,19 @@ if os.environ.get('DJANGO_LOCAL_DEV'):
         }
     }
     print("🔧 LOCAL DEV MODE — using SQLite")
+
+
+# ── Production Security Settings ─────────────────────────────────────────────
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # nginx already sets this
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+
 
 
 
