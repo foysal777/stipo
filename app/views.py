@@ -1197,6 +1197,55 @@ def contact_us(request):
     return Response({"message": "Message sent successfully"})
 
 
+@api_view(['post', 'get'])
+def test_email_view(request):
+    recipient = request.data.get('email') or request.query_params.get('email') or "test@example.com"
+    subject = "Stepo SMTP Test"
+    message = "If you receive this, your SMTP settings are correct!"
+    
+    import traceback
+    try:
+        from django.core.mail import send_mail
+        from django.conf import settings
+        
+        email_info = {
+            "EMAIL_HOST": settings.EMAIL_HOST,
+            "EMAIL_PORT": settings.EMAIL_PORT,
+            "EMAIL_HOST_USER": settings.EMAIL_HOST_USER,
+            "EMAIL_USE_TLS": settings.EMAIL_USE_TLS,
+            "EMAIL_USE_SSL": settings.EMAIL_USE_SSL,
+            "DEFAULT_FROM_EMAIL": settings.DEFAULT_FROM_EMAIL,
+        }
+        
+        sent = send_mail(
+            subject=subject,
+            message=message,
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=[recipient],
+            fail_silently=False
+        )
+        return Response({
+            "status": "success",
+            "message": f"Sent {sent} email(s) successfully to {recipient}",
+            "config": email_info
+        })
+    except Exception as e:
+        return Response({
+            "status": "error",
+            "error_class": e.__class__.__name__,
+            "error_message": str(e),
+            "traceback": traceback.format_exc(),
+            "config": {
+                "EMAIL_HOST": settings.EMAIL_HOST,
+                "EMAIL_PORT": settings.EMAIL_PORT,
+                "EMAIL_HOST_USER": settings.EMAIL_HOST_USER,
+                "EMAIL_USE_TLS": settings.EMAIL_USE_TLS,
+                "EMAIL_USE_SSL": settings.EMAIL_USE_SSL,
+                "DEFAULT_FROM_EMAIL": settings.DEFAULT_FROM_EMAIL,
+            }
+        }, status=500)
+
+
 
 
 

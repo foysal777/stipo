@@ -8,7 +8,8 @@ from .views import (
     ReviewView,
     faq_list,
     send_verification_code,
-    contact_us
+    contact_us,
+    test_email_view
 )
 
 urlpatterns = [
@@ -20,5 +21,6 @@ urlpatterns = [
     path('generate_data/', generate_data),
     path('review/', ReviewView.as_view()),
     path('faqs/', faq_list),
-    path('contact/', contact_us)
+    path('contact/', contact_us),
+    path('test_email/', test_email_view),
 ]
