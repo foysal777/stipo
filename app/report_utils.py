@@ -19,7 +19,7 @@ PROFILE_KEY_VALUE_MAP = {
     "age": "Ålder",
     "study_level": "Studienivå",
     "municipality": "Kommun",
-    "purpose_of_funding": "Syfte_med_finansiering",
+    "purpose_of_funding": "Syfte med finansiering",
     "language": "Språk",
     "subject": "Ämne"
 }
@@ -76,6 +76,45 @@ SCHOLARSHIP_KEY_VALUE_MAP_SV = {
     "Postnr": "Postnummer",
     "Stad": "Stad",
     "Län": "Län",
+    # Predefined scholarship field name mappings
+    "MainHuvudadress": "Huvudadress",
+    "PostalPostnr": "Postnummer",
+}
+
+SCHOLARSHIP_KEY_VALUE_MAP_EN = {
+    "Purpose": "Purpose of Funding",
+    "Ändamål": "Purpose of Funding",
+    "MainHuvudadress": "Main Address",
+    "PostalPostnr": "Postal Code",
+    "Municipality": "Municipality",
+    "Kommun": "Municipality",
+    "Email": "Email",
+    "Epost": "Email",
+    "Website": "Website",
+    "Websida": "Website",
+    "Phone": "Phone",
+    "Telefon": "Phone",
+    "Assets": "Assets",
+    "Tillgångar": "Assets",
+    "City": "City",
+    "Stad": "City",
+    "County": "County",
+    "Län": "County",
+    "Namn": "Name",
+}
+
+# Fields to exclude from the scholarship table in the PDF report
+SCHOLARSHIP_EXCLUDED_FIELDS = {
+    # Score fields
+    'Base Score', 'Relevance Score', 'Entity Bonus', 'Adjusted Score',
+    # Category / Subject / ID fields (per design requirements)
+    'Category', 'Kategori',
+    'Subject', 'Ämne',
+    'id', 'ID',
+    # Education/Study level (not relevant in scholarship table)
+    'Study Level', 'Utbildningsnivå',
+    # Sport internals
+    'Sport', 'Sportkategori',
 }
 
 
@@ -154,15 +193,17 @@ def create_pdf(data, user_profile, watermark_path, output_path):
         if 'Namn' in scholarship.keys():
             scholarship.pop('Namn')
         for key, value in scholarship.items():
-            if key in ['Base Score', 'Relevance Score', 'Entity Bonus', 'Adjusted Score']:
+            if key in SCHOLARSHIP_EXCLUDED_FIELDS:
                 continue
             if value and str(value) != "NaN":
                 # Wrap the value in a Paragraph for text wrapping
                 wrapped_value = Paragraph(str(value), styles["Normal"])
-                # Translate key to Swedish if user language is Swedish
+                # Translate key based on language
                 display_key = key
                 if user_profile.get('language', '') == 'sv' and key in SCHOLARSHIP_KEY_VALUE_MAP_SV:
                     display_key = SCHOLARSHIP_KEY_VALUE_MAP_SV[key]
+                elif user_profile.get('language', '') == 'en' and key in SCHOLARSHIP_KEY_VALUE_MAP_EN:
+                    display_key = SCHOLARSHIP_KEY_VALUE_MAP_EN[key]
                 table_data.append([display_key, wrapped_value])
 
         table = Table(table_data, colWidths=[120, 350])
