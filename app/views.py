@@ -33,6 +33,7 @@ from . import report_utils
 from .models import ScholarshipApplicant, Review, FAQ, Coupon, PreDefinedScholarship, SiteConfig, EmailTemplate
 from deep_translator import GoogleTranslator
 import re
+from urllib.parse import urlparse
 
 # Unicode cleaning regex and replacement map for PDF rendering
 _BOX_CLEAN = re.compile(
@@ -914,6 +915,43 @@ def generate_data(request):
     return Response({
         "success_count": len(total_result),
     })
+def is_valid_domain(url):
+    if not url:
+        return False
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return False
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        hostname = hostname.lower()
+        
+        # Build allowed domains from settings
+        allowed_domains = {'localhost', '127.0.0.1'}
+        
+        # Add hostnames from ALLOWED_HOSTS
+        for host in getattr(settings, 'ALLOWED_HOSTS', []):
+            if host and host != '*':
+                allowed_domains.add(host.lower())
+                
+        # Add hostnames from CORS_ALLOWED_ORIGINS
+        for origin in getattr(settings, 'CORS_ALLOWED_ORIGINS', []):
+            if origin:
+                origin_parsed = urlparse(origin)
+                if origin_parsed.hostname:
+                    allowed_domains.add(origin_parsed.hostname.lower())
+                    
+        # Add hostnames from CSRF_TRUSTED_ORIGINS
+        for origin in getattr(settings, 'CSRF_TRUSTED_ORIGINS', []):
+            if origin:
+                origin_parsed = urlparse(origin)
+                if origin_parsed.hostname:
+                    allowed_domains.add(origin_parsed.hostname.lower())
+
+        return hostname in allowed_domains
+    except Exception:
+        return False
 
 
 @api_view(['post'])
@@ -944,6 +982,22 @@ def generate_payment_link(request, email, method):
     success_url = request.data.get('success_url')
     cancel_url = request.data.get('cancel_url')
 
+    if not success_url:
+        if settings.DEBUG:
+            success_url = "http://localhost:3000/success"
+        else:
+            success_url = "https://app.stipendieportalen.se/success"
+
+    if not cancel_url:
+        if settings.DEBUG:
+            cancel_url = "http://localhost:3000/success?error=payment failed"
+        else:
+            cancel_url = "https://app.stipendieportalen.se/success?error=payment failed"
+
+    if not is_valid_domain(success_url):
+        raise ValidationError({"error": "invalid success_url domain"})
+    if not is_valid_domain(cancel_url):
+        raise ValidationError({"error": "invalid cancel_url domain"})
 
     application = get_object_or_404(
         ScholarshipApplicant,
@@ -979,8 +1033,8 @@ def generate_payment_link(request, email, method):
 
     price = price - price*(discount/100)
     session = stripe.checkout.Session.create(
-      success_url=success_url if success_url else "https://example.com/success",
-      cancel_url=cancel_url if cancel_url else "https://example.com/success?error=payment failed",
+      success_url=success_url,
+      cancel_url=cancel_url,
       line_items=[{
         "price_data":{
             "currency": "sek",
