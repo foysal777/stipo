@@ -476,20 +476,33 @@ def send_otp_email(application, recipient_email):
     </div>
     """
 
-    send_mail(
-        subject=subject,
-        message=message_text,
-        html_message=otp_html,
-        from_email=settings.EMAIL_HOST_USER,
-        recipient_list=[recipient_email]
-    )
+    try:
+        send_mail(
+            subject=subject,
+            message=message_text,
+            html_message=otp_html,
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=[recipient_email]
+        )
+    except Exception as e:
+        import sys
+        import traceback
+        sys.stderr.write(f"ERROR: send_otp_email failed to send to {recipient_email}: {str(e)}\n")
+        traceback.print_exc(file=sys.stderr)
+        raise
+
 
 @api_view(['post'])
 def submit_application(request):
     SITE_CONFIG = settings.SITE_CONFIG
 
     email = request.data.get('email')
+    if email:
+        email = str(email).strip().lower()
     form_data = request.data
+    if isinstance(form_data, dict):
+        form_data = form_data.copy()
+        form_data['email'] = email
     
     # Normalize municipality and other form fields on submission
     form_data = normalize_form_data(form_data)
@@ -522,6 +535,8 @@ def submit_application(request):
 
 @api_view(['post'])
 def send_verification_code(request, email):
+    if email:
+        email = str(email).strip().lower()
     application = get_object_or_404(ScholarshipApplicant, email=email)
     
     language = 'sv'
@@ -550,6 +565,8 @@ def send_verification_code(request, email):
 def verify_otp(request):
     from django.utils import timezone
     email = request.data.get('email')
+    if email:
+        email = str(email).strip().lower()
     otp = request.data.get('otp')
 
     if email is None:
