@@ -497,69 +497,43 @@ def send_otp_email(application, recipient_email):
 
 @api_view(['post'])
 def submit_application(request):
-    import sys
-    import traceback
-    sys.stderr.write("\n--- [apply/] Submit Application Endpoint Hit ---\n")
+    SITE_CONFIG = settings.SITE_CONFIG
+
+    email = request.data.get('email')
+    if email:
+        email = str(email).strip().lower()
+    form_data = request.data
+    if isinstance(form_data, dict):
+        form_data = form_data.copy()
+        form_data['email'] = email
     
-    try:
-        SITE_CONFIG = settings.SITE_CONFIG
+    # Normalize municipality and other form fields on submission
+    form_data = normalize_form_data(form_data)
 
-        email = request.data.get('email')
-        if email:
-            email = str(email).strip().lower()
-        sys.stderr.write(f"Parsed Email: {email}\n")
-        
-        form_data = request.data
-        if isinstance(form_data, dict):
-            form_data = form_data.copy()
-            form_data['email'] = email
-        
-        # Normalize municipality and other form fields on submission
-        form_data = normalize_form_data(form_data)
-        sys.stderr.write("Form data normalized.\n")
+    # Check OTP rate limit if applicant already exists
+    applicant = ScholarshipApplicant.objects.filter(email=email).first()
+    if applicant:
+        if not applicant.can_send_otp():
+            language = form_data.get('language', 'sv')
+            if language == 'en':
+                err_msg = "OTP send limit exceeded. Please try again after 1 hour."
+            else:
+                err_msg = "Gränsen för att skicka engångskod har överskridits. Försök igen om 1 timme."
+            raise ValidationError({"error": err_msg})
 
-        # Check OTP rate limit if applicant already exists
-        applicant = ScholarshipApplicant.objects.filter(email=email).first()
-        if applicant:
-            can_send = applicant.can_send_otp()
-            sys.stderr.write(f"Applicant exists. Can send OTP: {can_send}\n")
-            if not can_send:
-                language = form_data.get('language', 'sv')
-                if language == 'en':
-                    err_msg = "OTP send limit exceeded. Please try again after 1 hour."
-                else:
-                    err_msg = "Gränsen för att skicka engångskod har överskridits. Försök igen om 1 timme."
-                sys.stderr.write(f"Rejecting request: {err_msg}\n")
-                raise ValidationError({"error": err_msg})
-        else:
-            sys.stderr.write("Applicant does not exist. Creating new record...\n")
-
-        application, created = ScholarshipApplicant.objects.update_or_create(
-            email=email,
-            defaults={
-                "form_data": form_data
-            }
-        )
-        sys.stderr.write(f"ScholarshipApplicant update_or_create complete. Created status: {created}\n")
-        
-        application.admin_verified = bool(SITE_CONFIG and not SITE_CONFIG.admin_check)
-        application.email_verified = False
-        sys.stderr.write(f"Admin verified: {application.admin_verified}\n")
-        
-        application.generate_new_otp()
-        sys.stderr.write(f"Generated new OTP Code: {application.otp}\n")
-        
-        sys.stderr.write(f"Calling send_otp_email for {application.email}...\n")
-        send_otp_email(application, application.email)
-        sys.stderr.write("send_otp_email completed successfully.\n")
-        
-        sys.stderr.write("--- [apply/] Submit Application Endpoint Success ---\n\n")
-        return Response({"msg": "your form is submitted"})
-    except Exception as e:
-        sys.stderr.write(f"❌ ERROR: submit_application failed: {str(e)}\n")
-        traceback.print_exc(file=sys.stderr)
-        sys.stderr.write("--- [apply/] Submit Application Endpoint Failed ---\n\n")
-        raise
+    application, _created = ScholarshipApplicant.objects.update_or_create(
+        email=email,
+        defaults={
+            "form_data": form_data
+        }
+    )
+    application.admin_verified = bool(SITE_CONFIG and not SITE_CONFIG.admin_check)
+    application.email_verified = False
+    
+    application.generate_new_otp()
+    send_otp_email(application, application.email)
+    
+    return Response({"msg": "your form is submitted"})
 
 
 @api_view(['post'])
