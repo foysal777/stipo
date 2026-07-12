@@ -1249,6 +1249,40 @@ def test_email_view(request):
         }, status=500)
 
 
+class VerifyCaptchaAPIView(APIView):
+    def post(self, request):
+        token = request.data.get('token')
+        if not token:
+            return Response({"success": False, "error": "Captcha token is required"}, status=400)
+
+        recaptcha_secret = getattr(settings, 'RECAPTCHA_SECRET_KEY', '6LeIxAcTAAAAAGG-vFI1TnFTxWb0N-z0pHja3g2v')
+        
+        try:
+            import requests
+            response = requests.post(
+                "https://www.google.com/recaptcha/api/siteverify",
+                data={
+                    "secret": recaptcha_secret,
+                    "response": token
+                },
+                timeout=10
+            )
+            result = response.json()
+            if result.get("success"):
+                return Response({"success": True, "message": "Captcha verified successfully"})
+            else:
+                return Response({
+                    "success": False, 
+                    "error": "Captcha verification failed",
+                    "error-codes": result.get("error-codes", [])
+                }, status=400)
+        except Exception as e:
+            return Response({
+                "success": False,
+                "error": f"Failed to verify captcha: {str(e)}"
+            }, status=500)
+
+
 
 
 

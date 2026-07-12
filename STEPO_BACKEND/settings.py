@@ -71,6 +71,7 @@ EMAIL_USE_SSL = False
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '').strip()
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '').strip()
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY','').strip()
 
 # Application definition
 
