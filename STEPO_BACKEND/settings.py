@@ -124,11 +124,14 @@ WSGI_APPLICATION = 'STEPO_BACKEND.wsgi.application'
 import socket
 
 postgres_host = os.environ.get('POSTGRES_HOST', 'db')
+postgres_port = os.environ.get('POSTGRES_PORT', '5432')
 if postgres_host == 'db':
     try:
         socket.gethostbyname('db')
     except socket.gaierror:
         postgres_host = '127.0.0.1'
+        if postgres_port == '5432':
+            postgres_port = '5435'
 
 DATABASES = {
     'default': {
@@ -137,7 +140,7 @@ DATABASES = {
         'USER': os.environ.get('POSTGRES_USER', 'stepo_user'),
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
         'HOST': postgres_host,
-        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        'PORT': postgres_port,
     }
 }
 

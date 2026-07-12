@@ -476,6 +476,9 @@ def send_otp_email(application, recipient_email):
     </div>
     """
 
+    import sys
+    sys.stderr.write(f"✉️ Attempting to send OTP email (Code: {application.otp}) to {recipient_email}...\n")
+
     try:
         send_mail(
             subject=subject,
@@ -484,10 +487,10 @@ def send_otp_email(application, recipient_email):
             from_email=settings.EMAIL_HOST_USER,
             recipient_list=[recipient_email]
         )
+        sys.stderr.write(f"✅ OTP email successfully sent to {recipient_email}!\n")
     except Exception as e:
-        import sys
         import traceback
-        sys.stderr.write(f"ERROR: send_otp_email failed to send to {recipient_email}: {str(e)}\n")
+        sys.stderr.write(f"❌ ERROR: send_otp_email failed to send to {recipient_email}: {str(e)}\n")
         traceback.print_exc(file=sys.stderr)
         raise
 
