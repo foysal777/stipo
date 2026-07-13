@@ -497,11 +497,14 @@ def send_otp_email(application, recipient_email):
 
 @api_view(['post'])
 def submit_application(request):
+    import sys
+    sys.stderr.write("--> [submit_application] Endpoint hit\n")
     SITE_CONFIG = settings.SITE_CONFIG
 
     email = request.data.get('email')
     if email:
         email = str(email).strip().lower()
+    sys.stderr.write(f"--> [submit_application] Email parsed: {email}\n")
     form_data = request.data
     if isinstance(form_data, dict):
         form_data = form_data.copy()
@@ -509,29 +512,42 @@ def submit_application(request):
     
     # Normalize municipality and other form fields on submission
     form_data = normalize_form_data(form_data)
+    sys.stderr.write("--> [submit_application] Form data normalized\n")
 
     # Check OTP rate limit if applicant already exists
     applicant = ScholarshipApplicant.objects.filter(email=email).first()
     if applicant:
+        sys.stderr.write("--> [submit_application] Found existing applicant. Checking OTP limit.\n")
         if not applicant.can_send_otp():
+            sys.stderr.write("--> [submit_application] OTP send limit exceeded! Blocking request.\n")
             language = form_data.get('language', 'sv')
             if language == 'en':
                 err_msg = "OTP send limit exceeded. Please try again after 1 hour."
             else:
                 err_msg = "Gränsen för att skicka engångskod har överskridits. Försök igen om 1 timme."
             raise ValidationError({"error": err_msg})
+        sys.stderr.write("--> [submit_application] OTP limit check passed.\n")
+    else:
+        sys.stderr.write("--> [submit_application] No existing applicant found. Continuing.\n")
 
+    sys.stderr.write("--> [submit_application] Saving applicant in DB...\n")
     application, _created = ScholarshipApplicant.objects.update_or_create(
         email=email,
         defaults={
             "form_data": form_data
         }
     )
+    sys.stderr.write(f"--> [submit_application] DB update_or_create successful. Created: {_created}\n")
     application.admin_verified = bool(SITE_CONFIG and not SITE_CONFIG.admin_check)
     application.email_verified = False
     
+    sys.stderr.write("--> [submit_application] Generating new OTP...\n")
     application.generate_new_otp()
+    sys.stderr.write(f"--> [submit_application] OTP generated: {application.otp}\n")
+    
+    sys.stderr.write("--> [submit_application] Triggering send_otp_email...\n")
     send_otp_email(application, application.email)
+    sys.stderr.write("--> [submit_application] send_otp_email completed successfully.\n")
     
     return Response({"msg": "your form is submitted"})
 
@@ -1200,62 +1216,15 @@ def contact_us(request):
     return Response({"message": "Message sent successfully"})
 
 
-@api_view(['post', 'get'])
-def test_email_view(request):
-    recipient = request.data.get('email') or request.query_params.get('email') or "test@example.com"
-    subject = "Stepo SMTP Test"
-    message = "If you receive this, your SMTP settings are correct!"
-    
-    import traceback
-    try:
-        from django.core.mail import send_mail
-        from django.conf import settings
-        
-        email_info = {
-            "EMAIL_HOST": settings.EMAIL_HOST,
-            "EMAIL_PORT": settings.EMAIL_PORT,
-            "EMAIL_HOST_USER": settings.EMAIL_HOST_USER,
-            "EMAIL_USE_TLS": settings.EMAIL_USE_TLS,
-            "EMAIL_USE_SSL": settings.EMAIL_USE_SSL,
-            "DEFAULT_FROM_EMAIL": settings.DEFAULT_FROM_EMAIL,
-        }
-        
-        sent = send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.EMAIL_HOST_USER,
-            recipient_list=[recipient],
-            fail_silently=False
-        )
-        return Response({
-            "status": "success",
-            "message": f"Sent {sent} email(s) successfully to {recipient}",
-            "config": email_info
-        })
-    except Exception as e:
-        return Response({
-            "status": "error",
-            "error_class": e.__class__.__name__,
-            "error_message": str(e),
-            "traceback": traceback.format_exc(),
-            "config": {
-                "EMAIL_HOST": settings.EMAIL_HOST,
-                "EMAIL_PORT": settings.EMAIL_PORT,
-                "EMAIL_HOST_USER": settings.EMAIL_HOST_USER,
-                "EMAIL_USE_TLS": settings.EMAIL_USE_TLS,
-                "EMAIL_USE_SSL": settings.EMAIL_USE_SSL,
-                "DEFAULT_FROM_EMAIL": settings.DEFAULT_FROM_EMAIL,
-            }
-        }, status=500)
-
-
 class VerifyCaptchaAPIView(APIView):
     def post(self, request):
         token = request.data.get('token')
         if not token:
             return Response({"success": False, "error": "Captcha token is required"}, status=400)
 
-        recaptcha_secret = getattr(settings, 'RECAPTCHA_SECRET_KEY', '6LeIxAcTAAAAAGG-vFI1TnFTxWb0N-z0pHja3g2v')
+        recaptcha_secret = getattr(settings, 'RECAPTCHA_SECRET_KEY', None)
+        if not recaptcha_secret:
+            return Response({"success": False, "error": "reCAPTCHA secret key is not configured"}, status=500)
         
         try:
             import requests

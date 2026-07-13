@@ -9,7 +9,6 @@ from .views import (
     faq_list,
     send_verification_code,
     contact_us,
-    test_email_view,
     VerifyCaptchaAPIView
 )
 
@@ -23,6 +22,5 @@ urlpatterns = [
     path('review/', ReviewView.as_view()),
     path('faqs/', faq_list),
     path('contact/', contact_us),
-    path('test_email/', test_email_view),
     path('api/verify-captcha/', VerifyCaptchaAPIView.as_view(), name='verify_captcha'),
 ]
