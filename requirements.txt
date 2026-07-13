@@ -19,7 +19,7 @@ cuda-pathfinder==1.5.4
 cuda-toolkit==13.0.2
 deep-translator==1.11.4
 distro==1.9.0
-Django==5.0.4
+Django==5.2.16
 django-cleanup==9.0.0
 django-cors-headers==4.9.0
 djangorestframework==3.17.1
