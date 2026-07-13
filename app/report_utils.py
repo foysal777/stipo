@@ -129,9 +129,9 @@ def create_pdf(data, user_profile, watermark_path, output_path):
     role = str(user_profile.get('role', '')).lower()
     is_org = 'organ' in role
     if user_profile.get('language', '') == 'sv':
-        title = "Behörighetsrapport för organisation" if is_org else "Rapport om studentbehörighet"
+        title = "Finansieringslista" if is_org else "Rapport om studentbehörighet"
     else:
-        title = "Eligibility report for organization" if is_org else "Student Eligibility Report"
+        title = "Funding list" if is_org else "Student Eligibility Report"
     story.append(Paragraph(title, styles["Title"]))
     story.append(Spacer(1, 12))
 
@@ -145,16 +145,37 @@ def create_pdf(data, user_profile, watermark_path, output_path):
     profile = user_profile
     is_swedish = user_profile.get('language', '') == 'sv'
     
+    # Render ordered keys first: role (user type), name, gender, age
+    ordered_keys = ['role', 'name', 'gender', 'age']
+    processed_keys = set()
+    
+    for key in ordered_keys:
+        if key in profile:
+            processed_keys.add(key)
+            value = profile[key]
+            if key.lower() in EXCLUDED_PROFILE_FIELDS:
+                continue
+            if not value or value == '':
+                continue
+            
+            if is_swedish and key in PROFILE_KEY_VALUE_MAP:
+                display_key = PROFILE_KEY_VALUE_MAP[key]
+            elif not is_swedish and key in PROFILE_KEY_VALUE_MAP_EN:
+                display_key = PROFILE_KEY_VALUE_MAP_EN[key]
+            else:
+                display_key = key.replace('_', ' ').title()
+            
+            story.append(Paragraph(f"<b>{display_key}</b>: {value}", styles["Normal"]))
+            
+    # Render any remaining profile fields
     for key, value in profile.items():
-        # Skip excluded fields
+        if key in processed_keys:
+            continue
         if key.lower() in EXCLUDED_PROFILE_FIELDS:
             continue
-        
-        # Skip empty values
         if not value or value == '':
             continue
         
-        # Get the translated field name
         if is_swedish and key in PROFILE_KEY_VALUE_MAP:
             display_key = PROFILE_KEY_VALUE_MAP[key]
         elif not is_swedish and key in PROFILE_KEY_VALUE_MAP_EN:
@@ -167,7 +188,8 @@ def create_pdf(data, user_profile, watermark_path, output_path):
     story.append(Spacer(1, 12))
 
     # Eligible Scholarships Section
-    story.append(Paragraph("<b>Eligible Scholarships</b>", styles["Heading2"]))
+    if not is_org:
+        story.append(Paragraph("<b>Eligible Scholarships</b>", styles["Heading2"]))
 
     # for scholarship in data["matching_scholarships"]:
     for scholarship in data:
