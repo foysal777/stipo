@@ -1222,9 +1222,9 @@ class VerifyCaptchaAPIView(APIView):
         if not token:
             return Response({"success": False, "error": "Captcha token is required"}, status=400)
 
-        recaptcha_secret = getattr(settings, 'RECAPTCHA_SECRET_KEY', None)
+        recaptcha_secret = getattr(settings, 'RECAPTCHA_SECRET_KEY', None) or getattr(settings, 'RECAPTCHA_SITE_KEY', None)
         if not recaptcha_secret:
-            return Response({"success": False, "error": "reCAPTCHA secret key is not configured"}, status=500)
+            return Response({"success": False, "error": "reCAPTCHA key is not configured in settings"}, status=500)
         
         try:
             import requests
