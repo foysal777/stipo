@@ -476,9 +476,6 @@ def send_otp_email(application, recipient_email):
     </div>
     """
 
-    import sys
-    sys.stderr.write(f"✉️ Attempting to send OTP email (Code: {application.otp}) to {recipient_email}...\n")
-
     try:
         send_mail(
             subject=subject,
@@ -487,24 +484,17 @@ def send_otp_email(application, recipient_email):
             from_email=settings.EMAIL_HOST_USER,
             recipient_list=[recipient_email]
         )
-        sys.stderr.write(f"✅ OTP email successfully sent to {recipient_email}!\n")
     except Exception as e:
-        import traceback
-        sys.stderr.write(f"❌ ERROR: send_otp_email failed to send to {recipient_email}: {str(e)}\n")
-        traceback.print_exc(file=sys.stderr)
         raise
 
 
 @api_view(['post'])
 def submit_application(request):
-    import sys
-    sys.stderr.write("--> [submit_application] Endpoint hit\n")
     SITE_CONFIG = settings.SITE_CONFIG
 
     email = request.data.get('email')
     if email:
         email = str(email).strip().lower()
-    sys.stderr.write(f"--> [submit_application] Email parsed: {email}\n")
     form_data = request.data
     if isinstance(form_data, dict):
         form_data = form_data.copy()
@@ -512,42 +502,29 @@ def submit_application(request):
     
     # Normalize municipality and other form fields on submission
     form_data = normalize_form_data(form_data)
-    sys.stderr.write("--> [submit_application] Form data normalized\n")
 
     # Check OTP rate limit if applicant already exists
     applicant = ScholarshipApplicant.objects.filter(email=email).first()
     if applicant:
-        sys.stderr.write("--> [submit_application] Found existing applicant. Checking OTP limit.\n")
         if not applicant.can_send_otp():
-            sys.stderr.write("--> [submit_application] OTP send limit exceeded! Blocking request.\n")
             language = form_data.get('language', 'sv')
             if language == 'en':
                 err_msg = "OTP send limit exceeded. Please try again after 1 hour."
             else:
                 err_msg = "Gränsen för att skicka engångskod har överskridits. Försök igen om 1 timme."
             raise ValidationError({"error": err_msg})
-        sys.stderr.write("--> [submit_application] OTP limit check passed.\n")
-    else:
-        sys.stderr.write("--> [submit_application] No existing applicant found. Continuing.\n")
 
-    sys.stderr.write("--> [submit_application] Saving applicant in DB...\n")
     application, _created = ScholarshipApplicant.objects.update_or_create(
         email=email,
         defaults={
             "form_data": form_data
         }
     )
-    sys.stderr.write(f"--> [submit_application] DB update_or_create successful. Created: {_created}\n")
     application.admin_verified = bool(SITE_CONFIG and not SITE_CONFIG.admin_check)
     application.email_verified = False
     
-    sys.stderr.write("--> [submit_application] Generating new OTP...\n")
     application.generate_new_otp()
-    sys.stderr.write(f"--> [submit_application] OTP generated: {application.otp}\n")
-    
-    sys.stderr.write("--> [submit_application] Triggering send_otp_email...\n")
     send_otp_email(application, application.email)
-    sys.stderr.write("--> [submit_application] send_otp_email completed successfully.\n")
     
     return Response({"msg": "your form is submitted"})
 
