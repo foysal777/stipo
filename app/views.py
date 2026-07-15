@@ -1171,14 +1171,53 @@ def faq_list(request):
         "faqs_sv": faqs_sv
     })
 
+def verify_recaptcha_token(token):
+    recaptcha_secret = getattr(settings, 'RECAPTCHA_SECRET_KEY', None)
+    if not recaptcha_secret:
+        return False, {"success": False, "error": "reCAPTCHA secret key is not configured in settings"}, 500
+
+    try:
+        import requests
+        response = requests.post(
+            "https://www.google.com/recaptcha/api/siteverify",
+            data={
+                "secret": recaptcha_secret,
+                "response": token
+            },
+            timeout=10
+        )
+        result = response.json()
+        if result.get("success"):
+            return True, None, 200
+        else:
+            return False, {
+                "success": False, 
+                "error": "Captcha verification failed",
+                "error-codes": result.get("error-codes", [])
+            }, 400
+    except Exception as e:
+        return False, {
+            "success": False,
+            "error": f"Failed to verify captcha: {str(e)}"
+        }, 500
+
+
 @api_view(['post'])
 def contact_us(request):
     name = request.data.get('name')
     email = request.data.get('email')
     message_body = request.data.get('message_body')
+    token = request.data.get('token')
 
     if not name or not email or not message_body:
         raise ValidationError({"error": "name, email, and message_body are required"})
+
+    if not token:
+        raise ValidationError({"error": "reCAPTCHA token is required"})
+
+    success, response_data, status_code = verify_recaptcha_token(token)
+    if not success:
+        return Response(response_data, status=status_code)
 
     subject = f"Contact Form Submission from {name}"
     message_text = f"Name: {name}\nEmail: {email}\n\nMessage:\n{message_body}"
@@ -1199,34 +1238,11 @@ class VerifyCaptchaAPIView(APIView):
         if not token:
             return Response({"success": False, "error": "Captcha token is required"}, status=400)
 
-        recaptcha_secret = getattr(settings, 'RECAPTCHA_SECRET_KEY', None) or getattr(settings, 'RECAPTCHA_SITE_KEY', None)
-        if not recaptcha_secret:
-            return Response({"success": False, "error": "reCAPTCHA key is not configured in settings"}, status=500)
-        
-        try:
-            import requests
-            response = requests.post(
-                "https://www.google.com/recaptcha/api/siteverify",
-                data={
-                    "secret": recaptcha_secret,
-                    "response": token
-                },
-                timeout=10
-            )
-            result = response.json()
-            if result.get("success"):
-                return Response({"success": True, "message": "Captcha verified successfully"})
-            else:
-                return Response({
-                    "success": False, 
-                    "error": "Captcha verification failed",
-                    "error-codes": result.get("error-codes", [])
-                }, status=400)
-        except Exception as e:
-            return Response({
-                "success": False,
-                "error": f"Failed to verify captcha: {str(e)}"
-            }, status=500)
+        success, response_data, status_code = verify_recaptcha_token(token)
+        if not success:
+            return Response(response_data, status=status_code)
+
+        return Response({"success": True, "message": "Captcha verified successfully"})
 
 
 
