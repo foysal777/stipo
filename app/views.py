@@ -533,7 +533,15 @@ def submit_application(request):
 def send_verification_code(request, email):
     if email:
         email = str(email).strip().lower()
-    application = get_object_or_404(ScholarshipApplicant, email=email)
+    application = ScholarshipApplicant.objects.filter(email=email).first()
+    if not application:
+        # Detect language from query param or request body (applicant doesn't exist yet)
+        language = request.data.get('language') or request.query_params.get('language', 'sv')
+        if language == 'en':
+            err_msg = "We can't find any initiated applications linked to this email address. Please start a new one."
+        else:
+            err_msg = "Vi kan inte hitta någon påbörjad ansökan kopplad till denna e-postadress. Vänligen starta en ny ansökan."
+        raise ValidationError({"error": err_msg})
     
     language = 'sv'
     if application.form_data and isinstance(application.form_data, dict):
