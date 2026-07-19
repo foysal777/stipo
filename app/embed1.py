@@ -16,40 +16,44 @@ from fuzzywuzzy import fuzz
 
 def update_pinecone_embeddings(file_path=None, index_name=None):
 
-    def load_env_variables():
-        """Load API keys directly from .env file by parsing it manually."""
-        env_path = os.path.join(os.path.dirname(__file__), '.env')
-        env_path = ".env"
-        
-        if not os.path.exists(env_path):
-            raise FileNotFoundError(f" .env file not found at {env_path}")
-        
-        api_keys = {}
-        try:
-            with open(env_path, 'r', encoding='utf-8') as file:
-                for line in file:
-                    line = line.strip()
-                    # Skip empty lines and comments
-                    if not line or line.startswith('#'):
-                        continue
-                    # Parse key=value pairs
-                    if '=' in line:
-                        key, value = line.split('=', 1)
-                        api_keys[key.strip()] = value.strip()
-        except Exception as e:
-            raise ValueError(f" Error reading .env file: {e}")
-        
-        return api_keys
-
-    # Load the API keys
-    api_keys = load_env_variables()
-    OPENAI_API_KEY = api_keys.get("OPENAI_API_KEY")
-    PINECONE_API_KEY = api_keys.get("PINECONE_API_KEY")
+    # Load the API keys from environment variables first
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 
     if not OPENAI_API_KEY or not PINECONE_API_KEY:
-        raise ValueError(" API keys not found in .env file")
+        def load_env_variables():
+            """Load API keys directly from .env file by parsing it manually."""
+            # Check parent directory and current directory for .env
+            env_paths = [
+                os.path.join(os.path.dirname(__file__), '.env'),
+                os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'),
+                ".env"
+            ]
+            for path in env_paths:
+                if os.path.exists(path):
+                    api_keys = {}
+                    try:
+                        with open(path, 'r', encoding='utf-8') as file:
+                            for line in file:
+                                line = line.strip()
+                                if not line or line.startswith('#'):
+                                    continue
+                                if '=' in line:
+                                    key, value = line.split('=', 1)
+                                    api_keys[key.strip()] = value.strip()
+                        return api_keys
+                    except Exception as e:
+                        print(f"Error reading .env file at {path}: {e}")
+            return {}
 
-    print("API keys loaded successfully from .env file")
+        api_keys = load_env_variables()
+        OPENAI_API_KEY = OPENAI_API_KEY or api_keys.get("OPENAI_API_KEY")
+        PINECONE_API_KEY = PINECONE_API_KEY or api_keys.get("PINECONE_API_KEY")
+
+    if not OPENAI_API_KEY or not PINECONE_API_KEY:
+        raise ValueError("API keys not found in environment variables or .env file")
+
+    print("API keys loaded successfully")
 
     openai = OpenAI(api_key=OPENAI_API_KEY)
     pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -135,6 +139,30 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
         return response.data[0].embedding
 
 
+    # Determine the purpose column name in advance
+    purpose_cols = ["Ändamål", "ändamål", "purpose", "Purpose", "Ändamål (Purpose)", "Ändamål/Purpose"]
+    purpose_col = None
+    for col in purpose_cols:
+        if col in df.columns:
+            purpose_col = col
+            break
+    
+    if not purpose_col:
+        # Fall back to checking any column containing 'purpose' or 'ändamål'
+        for col in df.columns:
+            if 'ändamål' in col.lower() or 'purpose' in col.lower():
+                purpose_col = col
+                break
+    
+    if not purpose_col:
+        # If still not found, try the first column
+        if len(df.columns) > 0:
+            purpose_col = df.columns[0]
+        else:
+            raise ValueError("The Excel file has no columns.")
+            
+    print(f"Using column '{purpose_col}' for scholarship purpose text")
+
     def embed_and_upload(dataframe, start_idx=0):
         """Generate embeddings and upload to Pinecone index."""
         print(f"\nGenerating embeddings & uploading to '{index_name}' row by row...")
@@ -143,7 +171,7 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
         uploaded_count = 0
 
         for i, row in dataframe.iterrows():
-            text = row["Ändamål"].strip()
+            text = str(row.get(purpose_col, "")).strip()
             if not text:
                 continue
 
@@ -202,8 +230,10 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
         from app.models import SiteConfig
         site_config = SiteConfig.objects.first()
         if site_config:
-            site_config.pinecone_updated = True
-            site_config.save()
+            SiteConfig.objects.filter(id=site_config.id).update(
+                pinecone_updated=True,
+                upload_in_progress=False
+            )
             print(f"\n✅ SUCCESS: Dataset uploaded to Pinecone index '{index_name}'")
             print(f"   Pinecone updated flag set to TRUE")
             print(f"   You can now query this index for scholarships")

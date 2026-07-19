@@ -1,7 +1,7 @@
 import os as _os
 
 from django.dispatch import receiver
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, pre_save
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.conf import settings
 
@@ -100,6 +100,18 @@ def handle_application_save(sender, instance, created, **kwargs):
 from threading import Thread
 from django.db.models import F
 
+from django.db.models.signals import pre_save
+
+@receiver(pre_save, sender=SiteConfig)
+def handle_site_config_pre_save(sender, instance, **kwargs):
+    try:
+        old_instance = SiteConfig.objects.get(pk=instance.pk)
+        instance._old_file_name = old_instance.scholarships_db_file.name if old_instance.scholarships_db_file else None
+        instance._old_index = old_instance.active_dataset_index_name
+    except SiteConfig.DoesNotExist:
+        instance._old_file_name = None
+        instance._old_index = None
+
 @receiver(post_save, sender=SiteConfig)
 def handle_site_config_save(sender, instance, created, **kwargs):
     settings.SITE_CONFIG = instance
@@ -114,11 +126,18 @@ def handle_site_config_save(sender, instance, created, **kwargs):
         current_index = instance.active_dataset_index_name
         previous_index = instance.last_active_dataset_index
         
+        # Check if file name actually changed
+        old_file_name = getattr(instance, '_old_file_name', None)
+        new_file_name = current_file.name if current_file else None
+        file_changed = new_file_name != old_file_name
+        
         print(f"\n{'='*60}")
         print(f"📋 SiteConfig Saved")
         print(f"{'='*60}")
         print(f"  📍 Current Active Index: {current_index}")
-        print(f"  📁 File: {current_file.name if current_file else 'No file'}")
+        print(f"  📁 File: {new_file_name if new_file_name else 'No file'}")
+        print(f"  📁 Old File: {old_file_name if old_file_name else 'No old file'}")
+        print(f"  🔄 File Changed: {file_changed}")
         print(f"  ⏳ Upload Status: {'IN PROGRESS' if instance.upload_in_progress else 'Ready'}")
         
         # Prevent duplicate uploads if one is already running
@@ -130,6 +149,7 @@ def handle_site_config_save(sender, instance, created, **kwargs):
         # Only trigger upload if we have a file AND either:
         # 1. The index name changed (user switched datasets)
         # 2. This is a fresh save with file (admin just uploaded)
+        # 3. The file was actually changed
         index_changed = current_index != previous_index
         
         if not current_file:
@@ -148,10 +168,12 @@ def handle_site_config_save(sender, instance, created, **kwargs):
         if index_changed:
             should_upload = True
             reason = f"Index switched: '{previous_index}' → '{current_index}'"
-        elif current_file and not created:
-            # File was updated but index stayed same - still upload
+        elif file_changed:
             should_upload = True
-            reason = "New file uploaded (same index)"
+            reason = f"New file uploaded: '{old_file_name}' → '{new_file_name}'"
+        elif created:
+            should_upload = True
+            reason = "Initial configuration created with file"
         
         if should_upload:
             print(f"  ✅ UPLOAD TRIGGERED")

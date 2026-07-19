@@ -42,8 +42,16 @@ class SiteConfigAdmin(admin.ModelAdmin):
        
         for obj in queryset:
             if obj.scholarships_db_file:
+                # Update status in DB first using .update() to avoid signal triggers
+                SiteConfig.objects.filter(id=obj.id).update(
+                    upload_in_progress=True,
+                    last_active_dataset_index=obj.active_dataset_index_name
+                )
                 print(f"✓ Manual upload triggered for index: {obj.active_dataset_index_name}")
-                Thread(target=update_pinecone_embeddings).start()
+                Thread(
+                    target=update_pinecone_embeddings,
+                    args=(obj.scholarships_db_file.path, obj.active_dataset_index_name)
+                ).start()
                 self.message_user(request, f"✓ Upload started to index: {obj.active_dataset_index_name}")
             else:
                 self.message_user(request, "❌ No Excel file selected. Please upload a file first.")
