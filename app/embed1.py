@@ -83,9 +83,11 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
     else:
         print(f"✓ Using provided index name: {index_name}")
     
-    # Sanitize index name for Pinecone (underscores → hyphens, lowercase)
+    # Sanitize index name for Pinecone (underscores/spaces → hyphens, lowercase, alphanumeric only)
     # Pinecone requires: lowercase alphanumeric characters or '-' only
-    index_name = index_name.replace('_', '-').lower()
+    import re
+    index_name = index_name.strip().replace('_', '-').replace(' ', '-').lower()
+    index_name = re.sub(r'[^a-z0-9-]', '', index_name)
     print(f"✓ Sanitized index name for Pinecone: {index_name}")
     
     embedding_dim = 1536  # text-embedding-3-small
@@ -103,7 +105,8 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
         print(f" Waiting for '{index_name}' to become active...")
         while True:
             desc = pc.describe_index(index_name)
-            if desc.status["ready"]:
+            is_ready = desc.status.get("ready") if isinstance(desc.status, dict) else getattr(desc.status, "ready", False)
+            if is_ready:
                 print(f"Index '{index_name}' is now ready.")
                 break
             time.sleep(3)
@@ -163,36 +166,68 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
             
     print(f"Using column '{purpose_col}' for scholarship purpose text")
 
-    def embed_and_upload(dataframe, start_idx=0):
-        """Generate embeddings and upload to Pinecone index."""
-        print(f"\nGenerating embeddings & uploading to '{index_name}' row by row...")
-        print(f"   Starting from row {start_idx}...")
+    def embed_and_upload(dataframe, start_idx=0, batch_size=100):
+        """Generate embeddings and upload to Pinecone index in batches."""
         total_rows = len(dataframe)
+        print(f"\nGenerating embeddings & uploading to '{index_name}' in batches of {batch_size}...")
+        print(f"   Starting from row {start_idx} (Total rows in chunk: {total_rows})...")
         uploaded_count = 0
 
-        for i, row in dataframe.iterrows():
-            text = str(row.get(purpose_col, "")).strip()
-            if not text:
-                continue
+        rows = [row for _, row in dataframe.iterrows()]
 
-            embedding = get_openai_embedding(text)
-            if embedding is None:
+        for batch_start in range(0, total_rows, batch_size):
+            batch_rows = rows[batch_start:batch_start + batch_size]
+            
+            vectors_to_upsert = []
+            texts_to_embed = []
+            valid_indices = []
+            
+            for idx, row in enumerate(batch_rows):
+                text = str(row.get(purpose_col, "")).strip()
+                if text:
+                    text = safe_truncate(text)
+                    texts_to_embed.append(text)
+                    valid_indices.append(idx)
+            
+            if not texts_to_embed:
                 continue
+                
+            try:
+                response = openai.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=texts_to_embed
+                )
+                embeddings = [item.embedding for item in response.data]
+            except Exception as e:
+                print(f"Error calling OpenAI embedding API for batch {batch_start}: {e}")
+                embeddings = []
+                for text in texts_to_embed:
+                    try:
+                        emb = get_openai_embedding(text)
+                        embeddings.append(emb)
+                    except Exception as row_err:
+                        print(f"Row embedding error: {row_err}")
+                        embeddings.append(None)
 
-            metadata = row.to_dict()
-            index.upsert(
-                vectors=[{
-                    "id": str(start_idx + i),
-                    "values": embedding,
+            for idx_in_batch, emb in enumerate(embeddings):
+                if emb is None:
+                    continue
+                row_idx = valid_indices[idx_in_batch]
+                row = batch_rows[row_idx]
+                doc_id = str(start_idx + batch_start + row_idx)
+                metadata = row.to_dict()
+                vectors_to_upsert.append({
+                    "id": doc_id,
+                    "values": emb,
                     "metadata": metadata
-                }]
-            )
-            uploaded_count += 1
+                })
 
-            if (uploaded_count % 100 == 0):
-                print(f"   ✓ Uploaded {uploaded_count}/{total_rows} rows (ID: {start_idx + i})...")
+            if vectors_to_upsert:
+                index.upsert(vectors=vectors_to_upsert)
+                uploaded_count += len(vectors_to_upsert)
+                print(f"   ✓ Uploaded batch: {uploaded_count}/{total_rows} rows...")
 
-        print(f"  Batch completed: {uploaded_count} rows uploaded (IDs: {start_idx} → {start_idx + len(dataframe) - 1})")
+        print(f"  Batch completed: {uploaded_count} rows uploaded.")
 
 
 
@@ -239,5 +274,6 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
             print(f"   You can now query this index for scholarships")
     except Exception as e:
         print(f"⚠️  Warning: Could not update SiteConfig status: {e}")
+
 
 

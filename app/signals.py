@@ -107,10 +107,12 @@ def handle_site_config_pre_save(sender, instance, **kwargs):
     try:
         old_instance = SiteConfig.objects.get(pk=instance.pk)
         instance._old_file_name = old_instance.scholarships_db_file.name if old_instance.scholarships_db_file else None
-        instance._old_index = old_instance.active_dataset_index_name
+        instance._old_index = old_instance.get_active_dataset_index_name()
+        instance._old_pinecone_updated = old_instance.pinecone_updated
     except SiteConfig.DoesNotExist:
         instance._old_file_name = None
         instance._old_index = None
+        instance._old_pinecone_updated = False
 
 @receiver(post_save, sender=SiteConfig)
 def handle_site_config_save(sender, instance, created, **kwargs):
@@ -123,8 +125,8 @@ def handle_site_config_save(sender, instance, created, **kwargs):
 
     try:
         current_file = instance.scholarships_db_file
-        current_index = instance.active_dataset_index_name
-        previous_index = instance.last_active_dataset_index
+        current_index = instance.get_active_dataset_index_name()
+        previous_index = getattr(instance, '_old_index', instance.last_active_dataset_index)
         
         # Check if file name actually changed
         old_file_name = getattr(instance, '_old_file_name', None)
@@ -148,14 +150,14 @@ def handle_site_config_save(sender, instance, created, **kwargs):
         
         # Only trigger upload if we have a file AND either:
         # 1. The index name changed (user switched datasets)
-        # 2. This is a fresh save with file (admin just uploaded)
-        # 3. The file was actually changed
+        # 2. The file was actually changed
+        # 3. Pinecone is not updated yet (retry failed/pending upload)
+        # 4. Initial save with file
         index_changed = current_index != previous_index
         
         if not current_file:
             print(f"  ℹ️  No file attached - skipping upload")
             if index_changed:
-                # Update the tracking field using direct database update to avoid recursive signal
                 SiteConfig.objects.filter(id=instance.id).update(last_active_dataset_index=current_index)
                 print(f"  ✅ Index tracking updated: {current_index}")
             print(f"{'='*60}\n")
@@ -171,6 +173,9 @@ def handle_site_config_save(sender, instance, created, **kwargs):
         elif file_changed:
             should_upload = True
             reason = f"New file uploaded: '{old_file_name}' → '{new_file_name}'"
+        elif not instance.pinecone_updated:
+            should_upload = True
+            reason = f"Pinecone dataset not updated for index '{current_index}'"
         elif created:
             should_upload = True
             reason = "Initial configuration created with file"
@@ -185,6 +190,7 @@ def handle_site_config_save(sender, instance, created, **kwargs):
             # Use direct database update to avoid recursive signal triggering
             SiteConfig.objects.filter(id=instance.id).update(
                 upload_in_progress=True,
+                pinecone_updated=False,
                 last_active_dataset_index=current_index
             )
             
@@ -196,7 +202,7 @@ def handle_site_config_save(sender, instance, created, **kwargs):
             thread.daemon = True
             thread.start()
         else:
-            print(f"  ℹ️  No upload needed (same index, no file change)")
+            print(f"  ℹ️  No upload needed (same index, no file change, pinecone already updated)")
             print(f"{'='*60}\n")
         
     except Exception as e:
@@ -228,9 +234,13 @@ def _upload_with_status_update(file_path, index_name, config_id):
         print(f"{'='*60}\n")
         # Use direct database update to avoid triggering signal
         try:
-            SiteConfig.objects.filter(id=config_id).update(upload_in_progress=False)
-        except:
+            SiteConfig.objects.filter(id=config_id).update(
+                upload_in_progress=False,
+                pinecone_updated=False
+            )
+        except Exception:
             pass
+
 
 
 

@@ -38,21 +38,24 @@ class SiteConfigAdmin(admin.ModelAdmin):
     def upload_to_pinecone(self, request, queryset):
         """Manual action to upload Excel file to Pinecone"""
         from threading import Thread
-        from app.embed1 import update_pinecone_embeddings
+        from app.signals import _upload_with_status_update
        
         for obj in queryset:
             if obj.scholarships_db_file:
-                # Update status in DB first using .update() to avoid signal triggers
+                target_index = obj.get_active_dataset_index_name()
                 SiteConfig.objects.filter(id=obj.id).update(
                     upload_in_progress=True,
-                    last_active_dataset_index=obj.active_dataset_index_name
+                    pinecone_updated=False,
+                    last_active_dataset_index=target_index
                 )
-                print(f"✓ Manual upload triggered for index: {obj.active_dataset_index_name}")
-                Thread(
-                    target=update_pinecone_embeddings,
-                    args=(obj.scholarships_db_file.path, obj.active_dataset_index_name)
-                ).start()
-                self.message_user(request, f"✓ Upload started to index: {obj.active_dataset_index_name}")
+                print(f"✓ Manual upload triggered for index: {target_index}")
+                thread = Thread(
+                    target=_upload_with_status_update,
+                    args=(obj.scholarships_db_file.path, target_index, obj.id)
+                )
+                thread.daemon = True
+                thread.start()
+                self.message_user(request, f"✓ Upload started to index: {target_index}")
             else:
                 self.message_user(request, "❌ No Excel file selected. Please upload a file first.")
    

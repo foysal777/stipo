@@ -85,9 +85,10 @@ def get_active_index():
     """Get the active Pinecone index, with fallback to hardcoded default"""
     global INDEX_NAME
     try:
-        from django.conf import settings
-        if settings.SITE_CONFIG:
-            INDEX_NAME = settings.SITE_CONFIG.get_active_dataset_index_name()
+        from app.models import SiteConfig
+        site_config = SiteConfig.objects.first()
+        if site_config:
+            INDEX_NAME = site_config.get_active_dataset_index_name()
     except Exception as e:
         print(f"Warning: Could not load INDEX_NAME from SiteConfig, using default: {e}")
         INDEX_NAME = DEFAULT_INDEX_NAME
@@ -3118,9 +3119,10 @@ def find_scholarships_v2(
     global index, INDEX_NAME
 
     try:
-        from django.conf import settings
-        if settings.SITE_CONFIG:
-            INDEX_NAME = settings.SITE_CONFIG.get_active_dataset_index_name()
+        from app.models import SiteConfig
+        site_config = SiteConfig.objects.first()
+        if site_config:
+            INDEX_NAME = site_config.get_active_dataset_index_name()
             index = pc.Index(INDEX_NAME)
     except Exception as e:
         if debug:
