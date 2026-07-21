@@ -9,7 +9,7 @@ from django.db import models
 from django.contrib import admin
 from .models import (
     SiteConfig, FAQ, ScholarshipApplicant,
-    Review, Coupon, PreDefinedScholarship, EmailTemplate
+    Review, Coupon, PreDefinedScholarship, EmailTemplate, CookieConsentLog
 )
  
  
@@ -66,6 +66,10 @@ class SiteConfigAdmin(admin.ModelAdmin):
         ('System Settings', {
             'fields': ('admin_check', 'scholarships_db_file', 'pinecone_updated'),
             'description': 'Basic system configuration'
+        }),
+        ('Cookie & reCAPTCHA Consent Settings (Option 2)', {
+            'fields': ('keep_recaptcha', 'require_cookie_banner', 'block_captcha_until_consent', 'privacy_policy_url'),
+            'description': 'Manage Cookie Banner, Consent requirements, and reCAPTCHA blocking behavior.'
         }),
         ('Dataset Management', {
             'fields': ('use_default_dataset', 'active_dataset_index_name'),
@@ -197,3 +201,10 @@ class EmailTemplateAdmin(admin.ModelAdmin):
             'description': 'Final report email templates for English and Swedish. Use {report_file_name} in the body text.'
         }),
     )
+
+
+@admin.register(CookieConsentLog)
+class CookieConsentLogAdmin(admin.ModelAdmin):
+    list_display = ('user_ip', 'consent_given', 'consent_type', 'created_at')
+    list_filter = ('consent_given', 'consent_type', 'created_at')
+    readonly_fields = ('user_ip', 'consent_given', 'consent_type', 'user_agent', 'created_at')

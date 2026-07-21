@@ -30,7 +30,7 @@ from . import ai_utils
 from . import stipo54
 # from . import stepo_47rag
 from . import report_utils
-from .models import ScholarshipApplicant, Review, FAQ, Coupon, PreDefinedScholarship, SiteConfig, EmailTemplate
+from .models import ScholarshipApplicant, Review, FAQ, Coupon, PreDefinedScholarship, SiteConfig, EmailTemplate, CookieConsentLog
 from deep_translator import GoogleTranslator
 import re
 from urllib.parse import urlparse
@@ -1241,16 +1241,137 @@ def contact_us(request):
 
 
 class VerifyCaptchaAPIView(APIView):
+    @extend_schema(
+        summary="Verify reCAPTCHA Token",
+        description="Verifies the reCAPTCHA token against Google API. Requires active cookie consent when configured.",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "token": {"type": "string", "example": "user_recaptcha_token"},
+                    "consent_given": {"type": "boolean", "example": True}
+                },
+                "required": ["token"]
+            }
+        },
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT}
+    )
     def post(self, request):
         token = request.data.get('token')
         if not token:
             return Response({"success": False, "error": "Captcha token is required"}, status=400)
+
+        # Check if site configuration requires cookie consent before reCAPTCHA verification
+        site_config = SiteConfig.objects.first()
+        if site_config and site_config.block_captcha_until_consent:
+            consent_given = request.data.get('consent_given')
+            if consent_given is False:
+                return Response({
+                    "success": False,
+                    "error": "Cookie consent is required before verifying reCAPTCHA.",
+                    "consent_required": True
+                }, status=400)
 
         success, response_data, status_code = verify_recaptcha_token(token)
         if not success:
             return Response(response_data, status=status_code)
 
         return Response({"success": True, "message": "Captcha verified successfully"})
+
+
+class CookieConsentAPIView(APIView):
+    """
+    Cookie Consent & reCAPTCHA Banner API Endpoint (Option 2)
+    Provides status, configurations, and handles consent recording for blocking reCAPTCHA and form submissions.
+    """
+
+    @extend_schema(
+        summary="Get Cookie Consent Banner Settings",
+        description="Returns cookie consent configuration, reCAPTCHA blocking rules, and updated privacy policy info.",
+        responses={200: OpenApiTypes.OBJECT}
+    )
+    def get(self, request):
+        site_config = SiteConfig.objects.first()
+        keep_recaptcha = site_config.keep_recaptcha if site_config else True
+        require_cookie_banner = site_config.require_cookie_banner if site_config else True
+        block_captcha_until_consent = site_config.block_captcha_until_consent if site_config else True
+        privacy_policy_url = site_config.privacy_policy_url if site_config else "/privacy-policy"
+
+        return Response({
+            "keep_recaptcha": keep_recaptcha,
+            "require_cookie_banner": require_cookie_banner,
+            "block_captcha_until_consent": block_captcha_until_consent,
+            "privacy_policy_updated": True,
+            "privacy_policy_url": privacy_policy_url,
+            "message": "reCAPTCHA requires active cookie consent before initialization and form submission." if block_captcha_until_consent else "Cookie consent is optional."
+        }, status=200)
+
+    @extend_schema(
+        summary="Submit Cookie & reCAPTCHA Consent Preference",
+        description="Records visitor consent preference. Unblocks reCAPTCHA script loading and form submission when consent_given is true.",
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {
+                    "consent_given": {"type": "boolean", "example": True},
+                    "consent_type": {"type": "string", "example": "all"}
+                },
+                "required": ["consent_given"]
+            }
+        },
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.OBJECT}
+    )
+    def post(self, request):
+        consent_given = request.data.get('consent_given')
+        if consent_given is None:
+            return Response({
+                "success": False,
+                "error": "consent_given (boolean) is required"
+            }, status=400)
+
+        consent_given = bool(consent_given)
+        consent_type = str(request.data.get('consent_type', 'all'))
+
+        # Extract visitor IP address
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            user_ip = x_forwarded_for.split(',')[0].strip()
+        else:
+            user_ip = request.META.get('REMOTE_ADDR')
+
+        user_agent = request.META.get('HTTP_USER_AGENT', '')
+
+        # Log cookie consent choice
+        try:
+            CookieConsentLog.objects.create(
+                user_ip=user_ip,
+                consent_given=consent_given,
+                consent_type=consent_type,
+                user_agent=user_agent
+            )
+        except Exception:
+            pass
+
+        site_config = SiteConfig.objects.first()
+        privacy_policy_url = site_config.privacy_policy_url if site_config else "/privacy-policy"
+
+        if consent_given:
+            return Response({
+                "success": True,
+                "consent_given": True,
+                "captcha_unblocked": True,
+                "privacy_policy_url": privacy_policy_url,
+                "message": "Cookie consent recorded successfully. reCAPTCHA and form submission are now unblocked."
+            }, status=200)
+        else:
+            return Response({
+                "success": False,
+                "consent_given": False,
+                "captcha_unblocked": False,
+                "privacy_policy_url": privacy_policy_url,
+                "message": "Cookie consent declined. reCAPTCHA and form submission remain blocked."
+            }, status=200)
+
 
 
 

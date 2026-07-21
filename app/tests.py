@@ -86,3 +86,43 @@ class RecaptchaVerificationTests(TestCase):
         self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
         self.assertEqual(response.data.get('success'), False)
         self.assertIn("reCAPTCHA secret key is not configured", response.data.get('error'))
+
+
+class CookieConsentTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def test_get_cookie_consent_settings(self):
+        response = self.client.get('/api/cookie-consent/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('keep_recaptcha'))
+        self.assertTrue(response.data.get('require_cookie_banner'))
+        self.assertTrue(response.data.get('block_captcha_until_consent'))
+        self.assertEqual(response.data.get('privacy_policy_url'), '/privacy-policy')
+
+    def test_submit_cookie_consent_accept(self):
+        response = self.client.post('/api/cookie-consent/', {
+            'consent_given': True,
+            'consent_type': 'all'
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('success'))
+        self.assertTrue(response.data.get('consent_given'))
+        self.assertTrue(response.data.get('captcha_unblocked'))
+
+    def test_submit_cookie_consent_decline(self):
+        response = self.client.post('/api/cookie-consent/', {
+            'consent_given': False,
+            'consent_type': 'necessary'
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data.get('success'))
+        self.assertFalse(response.data.get('consent_given'))
+        self.assertFalse(response.data.get('captcha_unblocked'))
+
+    def test_submit_cookie_consent_missing_parameter(self):
+        response = self.client.post('/api/cookie-consent/', {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(response.data.get('success'))
+        self.assertIn('consent_given', response.data.get('error'))
+

@@ -9,7 +9,8 @@ from .views import (
     faq_list,
     send_verification_code,
     contact_us,
-    VerifyCaptchaAPIView
+    VerifyCaptchaAPIView,
+    CookieConsentAPIView
 )
 
 urlpatterns = [
@@ -23,4 +24,6 @@ urlpatterns = [
     path('faqs/', faq_list),
     path('contact/', contact_us),
     path('api/verify-captcha/', VerifyCaptchaAPIView.as_view(), name='verify_captcha'),
+    path('api/cookie-consent/', CookieConsentAPIView.as_view(), name='cookie_consent'),
+    path('api/consent/', CookieConsentAPIView.as_view(), name='consent'),
 ]

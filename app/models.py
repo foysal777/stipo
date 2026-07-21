@@ -228,6 +228,29 @@ Example: ["Scholarship A", "Scholarship B", "Scholarship C"]""",
         help_text="JSON map of available dataset index names and their metadata."
     )
 
+    # Cookie & reCAPTCHA Consent Settings (Option 2)
+    keep_recaptcha = models.BooleanField(
+        default=True,
+        verbose_name="Keep reCAPTCHA",
+        help_text="Keep reCAPTCHA enabled for security"
+    )
+    require_cookie_banner = models.BooleanField(
+        default=True,
+        verbose_name="Require Cookie/Consent Banner",
+        help_text="Show cookie consent banner before reCAPTCHA and form submission"
+    )
+    block_captcha_until_consent = models.BooleanField(
+        default=True,
+        verbose_name="Block reCAPTCHA Until Consent",
+        help_text="Block reCAPTCHA script loading and form submit action until visitor actively consents to cookies"
+    )
+    privacy_policy_url = models.CharField(
+        max_length=255,
+        default="/privacy-policy",
+        verbose_name="Privacy Policy URL",
+        help_text="URL path or full URL to updated privacy policy"
+    )
+
     def __str__(self):
         return "Site Settings"
 
@@ -506,4 +529,21 @@ class EmailTemplate(models.Model):
 
     def __str__(self):
         return "Email Templates Configuration"
+
+
+class CookieConsentLog(models.Model):
+    user_ip = models.GenericIPAddressField(null=True, blank=True)
+    consent_given = models.BooleanField(default=False)
+    consent_type = models.CharField(max_length=50, default="all", help_text="e.g. all, recaptcha, necessary")
+    user_agent = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Cookie Consent Log"
+        verbose_name_plural = "Cookie Consent Logs"
+
+    def __str__(self):
+        status = "Granted" if self.consent_given else "Denied"
+        return f"Consent {status} ({self.consent_type}) from {self.user_ip} at {self.created_at}"
+
 
