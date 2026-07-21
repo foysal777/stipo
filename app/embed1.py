@@ -277,3 +277,5 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
 
 
 
+
+

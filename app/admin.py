@@ -67,10 +67,6 @@ class SiteConfigAdmin(admin.ModelAdmin):
             'fields': ('admin_check', 'scholarships_db_file', 'pinecone_updated'),
             'description': 'Basic system configuration'
         }),
-        ('Cookie & reCAPTCHA Consent Settings (Option 2)', {
-            'fields': ('keep_recaptcha', 'require_cookie_banner', 'block_captcha_until_consent', 'privacy_policy_url'),
-            'description': 'Manage Cookie Banner, Consent requirements, and reCAPTCHA blocking behavior.'
-        }),
         ('Dataset Management', {
             'fields': ('use_default_dataset', 'active_dataset_index_name'),
             'description': 'Manage scholarship dataset indices. Check "Use Default Dataset Index" to use the hardcoded default index "scholarships-index-latest" from stipo54.py. Uncheck to use a custom dataset index.'
