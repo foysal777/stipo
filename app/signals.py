@@ -128,10 +128,19 @@ def handle_site_config_save(sender, instance, created, **kwargs):
         current_index = instance.get_active_dataset_index_name()
         previous_index = getattr(instance, '_old_index', instance.last_active_dataset_index)
         
-        # Check if file name actually changed
+        # Check if file changed or a new file was uploaded
         old_file_name = getattr(instance, '_old_file_name', None)
         new_file_name = current_file.name if current_file else None
-        file_changed = new_file_name != old_file_name
+        
+        # Detect new upload or file change:
+        # 1. Uncommitted file in FileField (means a new file was uploaded in current save)
+        # 2. File name changed
+        file_changed = False
+        if current_file:
+            if hasattr(current_file, '_committed') and not current_file._committed:
+                file_changed = True
+            elif new_file_name != old_file_name:
+                file_changed = True
         
         print(f"\n{'='*60}")
         print(f"📋 SiteConfig Saved")
@@ -172,7 +181,7 @@ def handle_site_config_save(sender, instance, created, **kwargs):
             reason = f"Index switched: '{previous_index}' → '{current_index}'"
         elif file_changed:
             should_upload = True
-            reason = f"New file uploaded: '{old_file_name}' → '{new_file_name}'"
+            reason = f"New Excel file uploaded"
         elif not instance.pinecone_updated:
             should_upload = True
             reason = f"Pinecone dataset not updated for index '{current_index}'"
@@ -199,7 +208,7 @@ def handle_site_config_save(sender, instance, created, **kwargs):
                 target=_upload_with_status_update,
                 args=(current_file.path, current_index, instance.id)
             )
-            thread.daemon = True
+            thread.daemon = False
             thread.start()
         else:
             print(f"  ℹ️  No upload needed (same index, no file change, pinecone already updated)")

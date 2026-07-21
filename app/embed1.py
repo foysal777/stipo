@@ -209,13 +209,31 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
                         print(f"Row embedding error: {row_err}")
                         embeddings.append(None)
 
+            def clean_metadata(row_dict):
+                cleaned = {}
+                for key, val in row_dict.items():
+                    if val is None:
+                        continue
+                    k_str = str(key).strip()
+                    if not k_str:
+                        continue
+                    if isinstance(val, float) and (np.isnan(val) or np.isinf(val)):
+                        continue
+                    v_str = str(val).strip()
+                    if v_str.lower() in ('nan', 'none', 'null'):
+                        continue
+                    if len(v_str) > 1000:
+                        v_str = v_str[:1000]
+                    cleaned[k_str] = v_str
+                return cleaned
+
             for idx_in_batch, emb in enumerate(embeddings):
                 if emb is None:
                     continue
                 row_idx = valid_indices[idx_in_batch]
                 row = batch_rows[row_idx]
                 doc_id = str(start_idx + batch_start + row_idx)
-                metadata = row.to_dict()
+                metadata = clean_metadata(row.to_dict())
                 vectors_to_upsert.append({
                     "id": doc_id,
                     "values": emb,
