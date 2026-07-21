@@ -9,7 +9,7 @@ from django.db import models
 from django.contrib import admin
 from .models import (
     SiteConfig, FAQ, ScholarshipApplicant,
-    Review, Coupon, PreDefinedScholarship, EmailTemplate, CookieConsentLog
+    Review, Coupon, PreDefinedScholarship, EmailTemplate
 )
  
  
@@ -197,10 +197,3 @@ class EmailTemplateAdmin(admin.ModelAdmin):
             'description': 'Final report email templates for English and Swedish. Use {report_file_name} in the body text.'
         }),
     )
-
-
-@admin.register(CookieConsentLog)
-class CookieConsentLogAdmin(admin.ModelAdmin):
-    list_display = ('user_ip', 'consent_given', 'consent_type', 'created_at')
-    list_filter = ('consent_given', 'consent_type', 'created_at')
-    readonly_fields = ('user_ip', 'consent_given', 'consent_type', 'user_agent', 'created_at')
