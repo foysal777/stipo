@@ -19,6 +19,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from rest_framework.generics import get_object_or_404
 from rest_framework.exceptions import ValidationError
+from rest_framework.throttling import AnonRateThrottle
 
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.types import OpenApiTypes
@@ -1279,11 +1280,40 @@ class VerifyCaptchaAPIView(APIView):
         return Response({"success": True, "message": "Captcha verified successfully"})
 
 
+class CookieConsentThrottle(AnonRateThrottle):
+    rate = '20/hour'
+
+
 class CookieConsentAPIView(APIView):
     """
     Cookie Consent & reCAPTCHA Banner API Endpoint (Option 2)
     Provides status, configurations, and handles consent recording for blocking reCAPTCHA and form submissions.
     """
+    throttle_classes = [CookieConsentThrottle]
+
+    @staticmethod
+    def _get_client_ip(request):
+        remote_addr = request.META.get('REMOTE_ADDR')
+        trusted_proxies = getattr(settings, 'TRUSTED_PROXY_IPS', [])
+        if remote_addr and trusted_proxies and remote_addr in trusted_proxies:
+            forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+            if forwarded_for:
+                ips = [ip.strip() for ip in forwarded_for.split(',') if ip.strip()]
+                if ips:
+                    return ips[0]
+        return remote_addr
+
+    @staticmethod
+    def _parse_bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            lowered = value.strip().lower()
+            if lowered in {'1', 'true', 'yes', 'on'}:
+                return True
+            if lowered in {'0', 'false', 'no', 'off', ''}:
+                return False
+        return bool(value)
 
     @extend_schema(
         summary="Get Cookie Consent Banner Settings",
@@ -1329,16 +1359,10 @@ class CookieConsentAPIView(APIView):
                 "error": "consent_given (boolean) is required"
             }, status=400)
 
-        consent_given = bool(consent_given)
+        consent_given = self._parse_bool(consent_given)
         consent_type = str(request.data.get('consent_type', 'all'))
 
-        # Extract visitor IP address
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            user_ip = x_forwarded_for.split(',')[0].strip()
-        else:
-            user_ip = request.META.get('REMOTE_ADDR')
-
+        user_ip = self._get_client_ip(request)
         user_agent = request.META.get('HTTP_USER_AGENT', '')
 
         # Log cookie consent choice
@@ -1349,6 +1373,13 @@ class CookieConsentAPIView(APIView):
                 consent_type=consent_type,
                 user_agent=user_agent
             )
+        except Exception:
+            pass
+
+        # Keep the log table bounded for privacy and storage reasons.
+        try:
+            cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=90)
+            CookieConsentLog.objects.filter(created_at__lt=cutoff).delete()
         except Exception:
             pass
 

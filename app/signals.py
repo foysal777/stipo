@@ -157,12 +157,12 @@ def handle_site_config_save(sender, instance, created, **kwargs):
             print(f"{'='*60}\n")
             return
         
-        # Only trigger upload if we have a file AND either:
+        # Only trigger upload if we have a file AND a meaningful dataset change occurred:
         # 1. The index name changed (user switched datasets)
         # 2. The file was actually changed
-        # 3. Pinecone is not updated yet (retry failed/pending upload)
-        # 4. Initial save with file
+        # 3. Initial save with file
         index_changed = current_index != previous_index
+        dataset_changed = index_changed or file_changed or created
         
         if not current_file:
             print(f"  ℹ️  No file attached - skipping upload")
@@ -182,9 +182,6 @@ def handle_site_config_save(sender, instance, created, **kwargs):
         elif file_changed:
             should_upload = True
             reason = f"New Excel file uploaded"
-        elif not instance.pinecone_updated:
-            should_upload = True
-            reason = f"Pinecone dataset not updated for index '{current_index}'"
         elif created:
             should_upload = True
             reason = "Initial configuration created with file"
@@ -203,15 +200,15 @@ def handle_site_config_save(sender, instance, created, **kwargs):
                 last_active_dataset_index=current_index
             )
             
-            # Start upload in background thread
+            # Start upload in a background thread so shutdown is not blocked
             thread = Thread(
                 target=_upload_with_status_update,
                 args=(current_file.path, current_index, instance.id)
             )
-            thread.daemon = False
+            thread.daemon = True
             thread.start()
         else:
-            print(f"  ℹ️  No upload needed (same index, no file change, pinecone already updated)")
+            print(f"  ℹ️  No upload needed (no meaningful dataset change detected)")
             print(f"{'='*60}\n")
         
     except Exception as e:

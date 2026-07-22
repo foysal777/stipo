@@ -1,8 +1,12 @@
 from django.test import TestCase
 from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from unittest.mock import patch
 from rest_framework.test import APIClient
 from rest_framework import status
+from django.urls import reverse
+
+from app.models import SiteConfig
 
 class RecaptchaVerificationTests(TestCase):
     def setUp(self):
@@ -88,12 +92,34 @@ class RecaptchaVerificationTests(TestCase):
         self.assertIn("reCAPTCHA secret key is not configured", response.data.get('error'))
 
 
+class SiteConfigPineconeSignalTests(TestCase):
+    def test_unrelated_field_change_does_not_trigger_upload_without_dataset_change(self):
+        with patch('app.signals.Thread') as mock_thread:
+            SiteConfig.objects.create(
+                pinecone_updated=False,
+                scholarships_db_file=SimpleUploadedFile(
+                    'test.xlsx',
+                    b'dummy-data',
+                    content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
+            )
+
+        mock_thread.reset_mock()
+
+        config = SiteConfig.objects.get()
+        with patch('app.signals.Thread') as mock_thread:
+            config.require_cookie_banner = not config.require_cookie_banner
+            config.save(update_fields=['require_cookie_banner'])
+
+        mock_thread.assert_not_called()
+
+
 class CookieConsentTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
     def test_get_cookie_consent_settings(self):
-        response = self.client.get('/api/cookie-consent/')
+        response = self.client.get(reverse('cookie_consent'))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data.get('keep_recaptcha'))
         self.assertTrue(response.data.get('require_cookie_banner'))
@@ -101,7 +127,7 @@ class CookieConsentTests(TestCase):
         self.assertEqual(response.data.get('privacy_policy_url'), '/privacy-policy')
 
     def test_submit_cookie_consent_accept(self):
-        response = self.client.post('/api/cookie-consent/', {
+        response = self.client.post(reverse('cookie_consent'), {
             'consent_given': True,
             'consent_type': 'all'
         }, format='json')
@@ -111,7 +137,7 @@ class CookieConsentTests(TestCase):
         self.assertTrue(response.data.get('captcha_unblocked'))
 
     def test_submit_cookie_consent_decline(self):
-        response = self.client.post('/api/cookie-consent/', {
+        response = self.client.post(reverse('cookie_consent'), {
             'consent_given': False,
             'consent_type': 'necessary'
         }, format='json')
@@ -121,8 +147,17 @@ class CookieConsentTests(TestCase):
         self.assertFalse(response.data.get('captcha_unblocked'))
 
     def test_submit_cookie_consent_missing_parameter(self):
-        response = self.client.post('/api/cookie-consent/', {}, format='json')
+        response = self.client.post(reverse('cookie_consent'), {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(response.data.get('success'))
         self.assertIn('consent_given', response.data.get('error'))
 
+    def test_submit_cookie_consent_string_false_is_treated_as_decline(self):
+        response = self.client.post(reverse('cookie_consent'), {
+            'consent_given': 'false',
+            'consent_type': 'necessary'
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data.get('success'))
+        self.assertFalse(response.data.get('consent_given'))
+        self.assertFalse(response.data.get('captcha_unblocked'))
