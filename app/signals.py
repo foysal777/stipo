@@ -348,36 +348,36 @@ def handle_datasetupload_save(sender, instance, created, **kwargs):
         print(f"❌ Error in DatasetUpload signal: {e}")
         print(f"{'='*60}\n")
         raise e
-+
-+
-+def _upload_with_status_update_dataset(file_path, index_name, dataset_id):
-+    """Upload to Pinecone and update DatasetUpload status when done"""
-+    try:
-+        update_pinecone_embeddings(file_path, index_name)
-+        DatasetUpload.objects.filter(id=dataset_id).update(
-+            upload_in_progress=False,
-+            pinecone_updated=True,
-+            upload_status='complete',
-+            upload_progress=100,
-+            last_uploaded_at=timezone.now(),
-+            upload_error_message=''
-+        )
-+        print(f"\n{'='*60}")
-+        print(f"✅ DATASET UPLOAD COMPLETE! (DatasetUpload)")
-+        print(f"{'='*60}\n")
-+    except Exception as e:
-+        print(f"❌ Dataset upload failed: {e}")
-+        print(f"{'='*60}\n")
-+        try:
-+            DatasetUpload.objects.filter(id=dataset_id).update(
-+                upload_in_progress=False,
-+                pinecone_updated=False,
-+                upload_status='failed',
-+                upload_progress=0,
-+                upload_error_message=str(e)
-+            )
-+        except Exception:
-+            pass
+
+
+def _upload_with_status_update_dataset(file_path, index_name, dataset_id):
+    """Upload to Pinecone and update DatasetUpload status when done"""
+    try:
+        update_pinecone_embeddings(file_path, index_name)
+        DatasetUpload.objects.filter(id=dataset_id).update(
+            upload_in_progress=False,
+            pinecone_updated=True,
+            upload_status='complete',
+            upload_progress=100,
+            last_uploaded_at=timezone.now(),
+            upload_error_message=''
+        )
+        print(f"\n{'='*60}")
+        print(f"✅ DATASET UPLOAD COMPLETE! (DatasetUpload)")
+        print(f"{'='*60}\n")
+    except Exception as e:
+        print(f"❌ Dataset upload failed: {e}")
+        print(f"{'='*60}\n")
+        try:
+            DatasetUpload.objects.filter(id=dataset_id).update(
+                upload_in_progress=False,
+                pinecone_updated=False,
+                upload_status='failed',
+                upload_progress=0,
+                upload_error_message=str(e)
+            )
+        except Exception:
+            pass
 
 
 
