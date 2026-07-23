@@ -352,8 +352,17 @@ def handle_datasetupload_save(sender, instance, created, **kwargs):
 
 def _upload_with_status_update_dataset(file_path, index_name, dataset_id):
     """Upload to Pinecone and update DatasetUpload status when done"""
+    def progress_cb(uploaded, total):
+        pct = int((uploaded / total) * 100) if total > 0 else 0
+        DatasetUpload.objects.filter(id=dataset_id).update(
+            rows_uploaded=uploaded,
+            total_rows=total,
+            upload_progress=pct,
+            upload_status='partial' if pct < total else 'complete'
+        )
+
     try:
-        upload_result = update_pinecone_embeddings(file_path, index_name)
+        upload_result = update_pinecone_embeddings(file_path, index_name, progress_callback=progress_cb)
 
         update_fields = {
             'upload_in_progress': False,

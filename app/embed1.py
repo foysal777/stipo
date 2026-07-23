@@ -14,7 +14,7 @@ from deep_translator import GoogleTranslator
 from openai import OpenAI
 from fuzzywuzzy import fuzz
 
-def update_pinecone_embeddings(file_path=None, index_name=None):
+def update_pinecone_embeddings(file_path=None, index_name=None, progress_callback=None):
 
     # Load the API keys from environment variables first
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -244,36 +244,17 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
                 index.upsert(vectors=vectors_to_upsert)
                 uploaded_count += len(vectors_to_upsert)
                 print(f"   ✓ Uploaded batch: {uploaded_count}/{total_rows} rows...")
+                if callable(progress_callback):
+                    try:
+                        progress_callback(uploaded_count, len(df))
+                    except Exception as p_err:
+                        print(f"Progress callback error: {p_err}")
 
         print(f"  Batch completed: {uploaded_count} rows uploaded.")
+        return uploaded_count
 
-
-
-    chunk1 = df.iloc[:3200]
-    chunk2 = df.iloc[3200:6400]
-
-
-    if len(df) >= 10000:
-        chunk3 = df.iloc[6400:]
-        print(f"\n Dataset has {len(df)} rows - Processing 3 chunks")
-        print(f"   Chunk 1: 0-{len(chunk1)-1} ({len(chunk1)} rows)")
-        print(f"   Chunk 2: {len(chunk1)}-{len(chunk1)+len(chunk2)-1} ({len(chunk2)} rows)")
-        print(f"   Chunk 3: {len(chunk1)+len(chunk2)}-{len(df)-1} ({len(chunk3)} rows)")
-    else:
-        chunk3 = None
-        print(f"\nDataset has {len(df)} rows - Processing 2 chunks")
-        print(f"   Chunk 1: 0-{len(chunk1)-1} ({len(chunk1)} rows)")
-        print(f"   Chunk 2: {len(chunk1)}-{len(df)-1} ({len(chunk2)} rows)")
-
-    print("\nUploading first batch (Chunk 1)...")
-    uploaded_total = embed_and_upload(chunk1, start_idx=0)
-
-    print("\nUploading second batch (Chunk 2)...")
-    uploaded_total += embed_and_upload(chunk2, start_idx=3200)
-
-    if chunk3 is not None:
-        print("\nUploading third batch (Chunk 3)...")
-        uploaded_total += embed_and_upload(chunk3, start_idx=6400)
+    print(f"\nUploading dataset ({len(df)} rows) to Pinecone index '{index_name}'...")
+    uploaded_total = embed_and_upload(df, start_idx=0)
 
     print("\nAll embeddings uploaded successfully!")
     print("=" * 60)
