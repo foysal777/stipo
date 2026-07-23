@@ -73,6 +73,9 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '').strip()
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 RECAPTCHA_SECRET_KEY = os.environ.get('RECAPTCHA_SECRET_KEY','').strip()
 RECAPTCHA_SITE_KEY = os.environ.get('RECAPTCHA_SITE_KEY','').strip()
+TRUSTED_PROXY_IPS = [
+    ip.strip() for ip in os.environ.get('TRUSTED_PROXY_IPS', '127.0.0.1,172.18.0.0/16').split(',') if ip.strip()
+]
 
 # Application definition
 
@@ -151,8 +154,18 @@ DATABASES = {
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 REST_FRAMEWORK = {
-    # YOUR SETTINGS
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/hour',
+    },
+    'NUM_PROXIES': 1,
+}
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache_table',
+    }
 }
 
 SPECTACULAR_SETTINGS = {

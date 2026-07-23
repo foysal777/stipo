@@ -333,6 +333,84 @@ Example: ["Scholarship A", "Scholarship B", "Scholarship C"]""",
         return index_name
 
 
+class DatasetUpload(models.Model):
+    scholarships_db_file = models.FileField(
+        upload_to=scholarship_db_path,
+        null=True,
+        blank=True,
+        verbose_name="Scholarships DB file"
+    )
+    use_default_dataset = models.BooleanField(
+        default=True,
+        verbose_name="Use Default Dataset Index",
+        help_text="Check to use the hardcoded default index 'scholarships-index-latest'."
+    )
+    dataset_index_name = models.CharField(
+        max_length=255,
+        default="scholarships-index-latest",
+        verbose_name="Dataset Index Name",
+        help_text="Name of the Pinecone index to use when not using the default dataset."
+    )
+    pinecone_updated = models.BooleanField(
+        default=False,
+        verbose_name="Pinecone updated",
+        help_text="Set to true when this dataset has been successfully uploaded to Pinecone."
+    )
+    upload_in_progress = models.BooleanField(
+        default=False,
+        verbose_name="Upload in progress",
+        help_text="Tracks whether a dataset upload is currently running."
+    )
+    upload_status = models.CharField(
+        max_length=50,
+        choices=[
+            ("not_started", "Not Started"),
+            ("partial", "Partial Upload"),
+            ("complete", "Complete"),
+            ("failed", "Failed"),
+        ],
+        default="not_started",
+        verbose_name="Upload Status",
+        help_text="High-level status of the dataset upload."
+    )
+    upload_progress = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Upload Progress (%)",
+        help_text="Integer percent progress (0-100) updated during background upload."
+    )
+    rows_uploaded = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Rows uploaded",
+        help_text="Number of rows successfully uploaded to the index."
+    )
+    total_rows = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Total rows",
+        help_text="Total number of rows in the dataset when upload started."
+    )
+    upload_error_message = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Upload error message",
+        help_text="If the upload fails, a short error message is recorded here."
+    )
+    last_uploaded_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Last uploaded at",
+        help_text="Timestamp when this dataset was successfully uploaded to Pinecone."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Dataset Upload"
+        verbose_name_plural = "Dataset Uploads"
+
+    def __str__(self):
+        return self.dataset_index_name or "Dataset Upload"
+
+
 class FAQ(models.Model):
 
     question = models.TextField()

@@ -14,8 +14,8 @@ __pycache__/
 *.pyo
 *.pyd
 *.egg-info/
-**/migrations/*
-!**/migrations/__init__.py
+# **/migrations/*
+# !**/migrations/__init__.py
 # Environments
 venv/
 env/
@@ -41,4 +41,4 @@ __pycache__/
 
 # OS Generated Files
 .DS_Store
-# Thumbs.db
+Thumbs.db

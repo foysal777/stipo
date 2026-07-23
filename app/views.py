@@ -8,6 +8,7 @@ import os
 from rest_framework import status 
 import uuid
 import datetime
+import ipaddress
 from django.shortcuts import render
 from django.conf import settings
 from django.core.mail import send_mail
@@ -1283,6 +1284,37 @@ class VerifyCaptchaAPIView(APIView):
 class CookieConsentThrottle(AnonRateThrottle):
     rate = '20/hour'
 
+    @staticmethod
+    def _is_trusted_proxy(remote_addr, trusted_proxies):
+        if not remote_addr:
+            return False
+        try:
+            remote_ip = ipaddress.ip_address(remote_addr)
+        except ValueError:
+            return False
+
+        for proxy in trusted_proxies or []:
+            try:
+                if '/' in proxy:
+                    if remote_ip in ipaddress.ip_network(proxy, strict=False):
+                        return True
+                elif remote_ip == ipaddress.ip_address(proxy):
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    def get_ident(self, request):
+        remote_addr = request.META.get('REMOTE_ADDR')
+        trusted_proxies = getattr(settings, 'TRUSTED_PROXY_IPS', [])
+        if self._is_trusted_proxy(remote_addr, trusted_proxies):
+            forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+            if forwarded_for:
+                ips = [ip.strip() for ip in forwarded_for.split(',') if ip.strip()]
+                if ips:
+                    return ips[0]
+        return remote_addr or '0.0.0.0'
+
 
 class CookieConsentAPIView(APIView):
     """
@@ -1295,12 +1327,32 @@ class CookieConsentAPIView(APIView):
     def _get_client_ip(request):
         remote_addr = request.META.get('REMOTE_ADDR')
         trusted_proxies = getattr(settings, 'TRUSTED_PROXY_IPS', [])
-        if remote_addr and trusted_proxies and remote_addr in trusted_proxies:
-            forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
-            if forwarded_for:
-                ips = [ip.strip() for ip in forwarded_for.split(',') if ip.strip()]
-                if ips:
-                    return ips[0]
+        if not remote_addr:
+            return None
+
+        try:
+            remote_ip = ipaddress.ip_address(remote_addr)
+        except ValueError:
+            return remote_addr
+
+        for proxy in trusted_proxies or []:
+            try:
+                if '/' in proxy:
+                    if remote_ip in ipaddress.ip_network(proxy, strict=False):
+                        forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+                        if forwarded_for:
+                            ips = [ip.strip() for ip in forwarded_for.split(',') if ip.strip()]
+                            if ips:
+                                return ips[0]
+                elif remote_ip == ipaddress.ip_address(proxy):
+                    forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR', '')
+                    if forwarded_for:
+                        ips = [ip.strip() for ip in forwarded_for.split(',') if ip.strip()]
+                        if ips:
+                            return ips[0]
+            except ValueError:
+                continue
+
         return remote_addr
 
     @staticmethod

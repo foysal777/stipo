@@ -8,7 +8,7 @@ from django.db import models
 # admin.py
 from django.contrib import admin
 from .models import (
-    SiteConfig, FAQ, ScholarshipApplicant,
+    SiteConfig, DatasetUpload, FAQ, ScholarshipApplicant,
     Review, Coupon, PreDefinedScholarship, EmailTemplate
 )
  
@@ -159,7 +159,56 @@ class CouponAdmin(admin.ModelAdmin):
         return "⚠️ Unavailable"
     is_usable_status.short_description = "Status"
  
- 
+
+@admin.register(DatasetUpload)
+class DatasetUploadAdmin(admin.ModelAdmin):
+    list_display = (
+        'dataset_index_name', 'use_default_dataset', 'pinecone_updated',
+        'upload_status', 'upload_progress', 'rows_uploaded',
+        'total_rows', 'last_uploaded_at'
+    )
+    readonly_fields = (
+        'pinecone_updated', 'upload_in_progress', 'upload_status',
+        'upload_progress', 'rows_uploaded', 'total_rows',
+        'upload_error_message', 'last_uploaded_at', 'created_at',
+        'updated_at'
+    )
+    fieldsets = (
+        ('Dataset Upload', {
+            'fields': (
+                'scholarships_db_file',
+                'use_default_dataset',
+                'dataset_index_name',
+            ),
+            'description': 'Upload a dataset file and choose the Pinecone index name used for queries.',
+        }),
+        ('Upload Status', {
+            'fields': (
+                'pinecone_updated',
+                'upload_in_progress',
+                'upload_status',
+                'upload_progress',
+                'rows_uploaded',
+                'total_rows',
+                'upload_error_message',
+                'last_uploaded_at',
+            ),
+            'description': 'High-level status of the dataset upload to Pinecone. Status fields are read-only and updated during background upload.',
+        }),
+        ('Timing', {
+            'fields': ('created_at', 'updated_at',),
+            'classes': ('collapse',),
+        }),
+    )
+    search_fields = ('dataset_index_name',)
+    list_filter = ('use_default_dataset', 'pinecone_updated', 'upload_status')
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj is None:
+            return self.readonly_fields
+        return self.readonly_fields
+
+
 @admin.register(PreDefinedScholarship)
 class PreDefinedScholarshipAdmin(admin.ModelAdmin):
     list_display = [
