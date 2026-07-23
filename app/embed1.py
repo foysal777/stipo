@@ -70,11 +70,10 @@ def update_pinecone_embeddings(file_path=None, index_name=None, progress_callbac
     if not index_name:
         index_name = "scholarships-index-latest"
         try:
-            from django.conf import settings
             from app.models import SiteConfig
             site_config = SiteConfig.objects.first()
-            if site_config and site_config.active_dataset_index_name:
-                index_name = site_config.active_dataset_index_name
+            if site_config:
+                index_name = site_config.get_active_dataset_index_name()
                 print(f"✓ Using custom index name from SiteConfig: {index_name}")
             else:
                 print(f"✓ Using default index name: {index_name}")
@@ -258,21 +257,6 @@ def update_pinecone_embeddings(file_path=None, index_name=None, progress_callbac
 
     print("\nAll embeddings uploaded successfully!")
     print("=" * 60)
-
-    # Update SiteConfig to mark upload as complete
-    try:
-        from app.models import SiteConfig
-        site_config = SiteConfig.objects.first()
-        if site_config:
-            SiteConfig.objects.filter(id=site_config.id).update(
-                pinecone_updated=True,
-                upload_in_progress=False
-            )
-            print(f"\n✅ SUCCESS: Dataset uploaded to Pinecone index '{index_name}'")
-            print(f"   Pinecone updated flag set to TRUE")
-            print(f"   You can now query this index for scholarships")
-    except Exception as e:
-        print(f"⚠️  Warning: Could not update SiteConfig status: {e}")
 
     return {
         "total_rows": len(df),

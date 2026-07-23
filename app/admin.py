@@ -17,7 +17,7 @@ from .models import (
 class SiteConfigAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         return not SiteConfig.objects.exists()
- 
+
     def changelist_view(self, request, extra_context=None):
         obj = SiteConfig.objects.first()
         if obj:
@@ -30,46 +30,11 @@ class SiteConfigAdmin(admin.ModelAdmin):
         model_name = SiteConfig._meta.model_name
         print(app_label, model_name)
         return redirect(reverse(f'admin:{app_label}_{model_name}_add'))
-        return super().changelist_view(request, extra_context)
- 
-    def get_readonly_fields(self, request, v):
-        return ["pinecone_updated"]
-   
-    def upload_to_pinecone(self, request, queryset):
-        """Manual action to upload Excel file to Pinecone"""
-        from threading import Thread
-        from app.signals import _upload_with_status_update
-       
-        for obj in queryset:
-            if obj.scholarships_db_file:
-                target_index = obj.get_active_dataset_index_name()
-                SiteConfig.objects.filter(id=obj.id).update(
-                    upload_in_progress=True,
-                    pinecone_updated=False,
-                    last_active_dataset_index=target_index
-                )
-                print(f"✓ Manual upload triggered for index: {target_index}")
-                thread = Thread(
-                    target=_upload_with_status_update,
-                    args=(obj.scholarships_db_file.path, target_index, obj.id)
-                )
-                thread.daemon = True
-                thread.start()
-                self.message_user(request, f"✓ Upload started to index: {target_index}")
-            else:
-                self.message_user(request, "❌ No Excel file selected. Please upload a file first.")
-   
-    upload_to_pinecone.short_description = "📤 Manual Upload: Upload Excel data to Pinecone"
-    actions = ['upload_to_pinecone']
- 
+
     fieldsets = (
         ('System Settings', {
-            'fields': ('admin_check', 'scholarships_db_file', 'pinecone_updated'),
+            'fields': ('admin_check',),
             'description': 'Basic system configuration'
-        }),
-        ('Dataset Management', {
-            'fields': ('use_default_dataset', 'active_dataset_index_name'),
-            'description': 'Manage scholarship dataset indices. Check "Use Default Dataset Index" to use the hardcoded default index "scholarships-index-latest" from stipo54.py. Uncheck to use a custom dataset index.'
         }),
         ('Custom LLM Filter Prompt - Individual Users', {
             'fields': ('use_default_query_filter_individual', 'custom_query_prompt_individual',),

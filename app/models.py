@@ -79,10 +79,6 @@ class SiteConfig(models.Model):
     # )
 
     admin_check = models.BooleanField(default=True)
-    scholarships_db_file = models.FileField(upload_to=scholarship_db_path, null=True)
-    pinecone_updated = models.BooleanField(default=False)
-    upload_in_progress = models.BooleanField(default=False, help_text="Tracks if an upload is currently running to prevent duplicate uploads")
-    last_active_dataset_index = models.CharField(max_length=255, default="scholarships-index-latest", help_text="Previous active index to detect when user changes it")
 
     query_template = models.TextField(
         verbose_name="LLM filter system prompt",
@@ -207,27 +203,6 @@ Example: ["Scholarship A", "Scholarship B", "Scholarship C"]""",
     # Legacy use_default - kept for backward compatibility
     use_default = models.BooleanField(default=True)
 
-    # Dataset management fields
-    use_default_dataset = models.BooleanField(
-        default=True,
-        verbose_name="Use Default Dataset Index",
-        help_text="Check to use the hardcoded default index 'scholarships-index-latest' from stipo54.py. Uncheck to use a custom dataset index."
-    )
-
-    active_dataset_index_name = models.CharField(
-        max_length=255,
-        default="scholarships-index-latest",
-        verbose_name="Active Dataset Index Name",
-        help_text="The name of the Pinecone index to use when 'Use Default Dataset Index' is unchecked."
-    )
-
-    available_dataset_indices = models.JSONField(
-        default=dict,
-        blank=True,
-        verbose_name="Available Dataset Indices",
-        help_text="JSON map of available dataset index names and their metadata."
-    )
-
     # Cookie & reCAPTCHA Consent Settings (Option 2)
     keep_recaptcha = models.BooleanField(
         default=True,
@@ -316,21 +291,17 @@ Example: ["Scholarship A", "Scholarship B", "Scholarship C"]""",
 
     def get_active_dataset_index_name(self):
         """
-        Return the active dataset index name.
-        - If use_default_dataset is True → return "scholarships-index-latest" (hardcoded default)
-        - If use_default_dataset is False → return the configured active_dataset_index_name
-        
-        NOTE: Automatically converts underscores to hyphens for Pinecone compatibility
-        (Pinecone only allows: lowercase alphanumeric and hyphens)
+        Return the active dataset index name from DatasetUpload or default "scholarships-index-latest".
         """
-        if self.use_default_dataset:
-            return "scholarships-index-latest"  # Signal to use hardcoded default from stipo54.py
-        
-        index_name = self.active_dataset_index_name.strip() if self.active_dataset_index_name else "scholarships-index-latest"
-        # Convert underscores to hyphens for Pinecone compatibility
-        # Pinecone requires: lowercase alphanumeric characters or '-' only
-        index_name = index_name.replace('_', '-').lower()
-        return index_name
+        try:
+            latest = DatasetUpload.objects.filter(pinecone_updated=True).order_by('-updated_at').first()
+            if latest:
+                if latest.use_default_dataset:
+                    return "scholarships-index-latest"
+                return (latest.dataset_index_name or "scholarships-index-latest").replace('_', '-').lower()
+        except Exception:
+            pass
+        return "scholarships-index-latest"
 
 
 class DatasetUpload(models.Model):

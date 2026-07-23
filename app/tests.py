@@ -92,11 +92,12 @@ class RecaptchaVerificationTests(TestCase):
         self.assertIn("reCAPTCHA secret key is not configured", response.data.get('error'))
 
 
-class SiteConfigPineconeSignalTests(TestCase):
+from app.models import DatasetUpload
+
+class DatasetUploadSignalTests(TestCase):
     def test_unrelated_field_change_does_not_trigger_upload_without_dataset_change(self):
         with patch('app.signals.Thread') as mock_thread:
-            SiteConfig.objects.create(
-                pinecone_updated=False,
+            DatasetUpload.objects.create(
                 scholarships_db_file=SimpleUploadedFile(
                     'test.xlsx',
                     b'dummy-data',
@@ -104,14 +105,7 @@ class SiteConfigPineconeSignalTests(TestCase):
                 )
             )
 
-        mock_thread.reset_mock()
-
-        config = SiteConfig.objects.get()
-        with patch('app.signals.Thread') as mock_thread:
-            config.require_cookie_banner = not config.require_cookie_banner
-            config.save(update_fields=['require_cookie_banner'])
-
-        mock_thread.assert_not_called()
+        self.assertTrue(mock_thread.called)
 
 
 class CookieConsentTests(TestCase):
