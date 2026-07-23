@@ -1,11 +1,14 @@
 import os as _os
 
+import os as _os
+
 from django.dispatch import receiver
 from django.db.models.signals import post_save, pre_save
 from django.core.mail import EmailMessage, EmailMultiAlternatives
 from django.conf import settings
+from django.utils import timezone
 
-from .models import ScholarshipApplicant, SiteConfig, EmailTemplate
+from .models import ScholarshipApplicant, SiteConfig, EmailTemplate, DatasetUpload
 from app.embed1 import update_pinecone_embeddings
 
 
@@ -217,6 +220,7 @@ def handle_site_config_save(sender, instance, created, **kwargs):
         raise e
 
 
+
 def _upload_with_status_update(file_path, index_name, config_id):
     """Upload to Pinecone and update SiteConfig status when done"""
     try:
@@ -248,8 +252,106 @@ def _upload_with_status_update(file_path, index_name, config_id):
             pass
 
 
+@receiver(pre_save, sender=DatasetUpload)
+def handle_datasetupload_pre_save(sender, instance, **kwargs):
+    try:
+        old_instance = DatasetUpload.objects.get(pk=instance.pk)
+        instance._old_file_name = old_instance.scholarships_db_file.name if old_instance.scholarships_db_file else None
+        instance._old_index = old_instance.dataset_index_name
+    except DatasetUpload.DoesNotExist:
+        instance._old_file_name = None
+        instance._old_index = None
+
+
+@receiver(post_save, sender=DatasetUpload)
+def handle_datasetupload_save(sender, instance, created, **kwargs):
+    try:
+        current_file = instance.scholarships_db_file
+        # compute active index name
+        if instance.use_default_dataset:
+            current_index = "scholarships-index-latest"
+        else:
+            current_index = (instance.dataset_index_name or "scholarships-index-latest").replace('_', '-').lower()
+
+        previous_index = getattr(instance, '_old_index', None)
+        old_file_name = getattr(instance, '_old_file_name', None)
+        new_file_name = current_file.name if current_file else None
+
+        file_changed = False
+        if current_file:
+            if hasattr(current_file, '_committed') and not current_file._committed:
+                file_changed = True
+            elif new_file_name != old_file_name:
+                file_changed = True
+
+        print(f"\n{'='*60}")
+        print(f"📋 DatasetUpload Saved (id={instance.id})")
+        print(f"  📍 Current Active Index: {current_index}")
+        print(f"  📁 File: {new_file_name if new_file_name else 'No file'}")
+        print(f"  📁 Old File: {old_file_name if old_file_name else 'No old file'}")
+        print(f"  🔄 File Changed: {file_changed}")
+        print(f"  ⏳ Upload Status: {'IN PROGRESS' if instance.upload_in_progress else 'Ready'}")
+
+        if instance.upload_in_progress:
+            print(f"  ⚠️  Upload already in progress - skipping duplicate upload")
+            print(f"{'='*60}\n")
+            return
+
+        index_changed = current_index != previous_index
+        dataset_changed = index_changed or file_changed or created
+
+        if not current_file:
+            print(f"  ℹ️  No file attached - skipping upload for DatasetUpload")
+            if index_changed:
+                DatasetUpload.objects.filter(id=instance.id).update(dataset_index_name=current_index)
+                print(f"  ✅ Index tracking updated: {current_index}")
+            print(f"{'='*60}\n")
+            return
+
+        should_upload = False
+        reason = ""
+        if index_changed:
+            should_upload = True
+            reason = f"Index switched: '{previous_index}' → '{current_index}'"
+        elif file_changed:
+            should_upload = True
+            reason = f"New Excel file uploaded"
+        elif created:
+            should_upload = True
+            reason = "Initial dataset created with file"
+
+        if should_upload:
+            print(f"  ✅ UPLOAD TRIGGERED (DatasetUpload)")
+            print(f"  Reason: {reason}")
+            print(f"  🎯 Target Index: {current_index}")
+            print(f"  Status: Starting background upload...")
+            print(f"{'='*60}\n")
+
+            DatasetUpload.objects.filter(id=instance.id).update(
+                upload_in_progress=True,
+                pinecone_updated=False,
+                upload_status='partial',
+                dataset_index_name=current_index
+            )
+
+            thread = Thread(
+                target=_upload_with_status_update,
+                args=(current_file.path, current_index, instance.id)
+            )
+            thread.daemon = True
+            thread.start()
+        else:
+            print(f"  ℹ️  No upload needed for DatasetUpload (no meaningful dataset change detected)")
+            print(f"{'='*60}\n")
+
+    except Exception as e:
+        print(f"❌ Error in DatasetUpload signal: {e}")
+        print(f"{'='*60}\n")
+        raise e
 
 
 
 
- 
+
+
+
