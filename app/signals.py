@@ -353,17 +353,28 @@ def handle_datasetupload_save(sender, instance, created, **kwargs):
 def _upload_with_status_update_dataset(file_path, index_name, dataset_id):
     """Upload to Pinecone and update DatasetUpload status when done"""
     try:
-        update_pinecone_embeddings(file_path, index_name)
-        DatasetUpload.objects.filter(id=dataset_id).update(
-            upload_in_progress=False,
-            pinecone_updated=True,
-            upload_status='complete',
-            upload_progress=100,
-            last_uploaded_at=timezone.now(),
-            upload_error_message=''
-        )
+        upload_result = update_pinecone_embeddings(file_path, index_name)
+
+        update_fields = {
+            'upload_in_progress': False,
+            'pinecone_updated': True,
+            'upload_status': 'complete',
+            'upload_progress': 100,
+            'last_uploaded_at': timezone.now(),
+            'upload_error_message': ''
+        }
+        if isinstance(upload_result, dict):
+            if 'total_rows' in upload_result:
+                update_fields['total_rows'] = upload_result['total_rows']
+            if 'rows_uploaded' in upload_result:
+                update_fields['rows_uploaded'] = upload_result['rows_uploaded']
+
+        DatasetUpload.objects.filter(id=dataset_id).update(**update_fields)
+
         print(f"\n{'='*60}")
         print(f"✅ DATASET UPLOAD COMPLETE! (DatasetUpload)")
+        if isinstance(upload_result, dict):
+            print(f"  Rows uploaded: {upload_result.get('rows_uploaded')} / {upload_result.get('total_rows')}")
         print(f"{'='*60}\n")
     except Exception as e:
         print(f"❌ Dataset upload failed: {e}")

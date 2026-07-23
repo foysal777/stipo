@@ -266,18 +266,18 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
         print(f"   Chunk 2: {len(chunk1)}-{len(df)-1} ({len(chunk2)} rows)")
 
     print("\nUploading first batch (Chunk 1)...")
-    embed_and_upload(chunk1, start_idx=0)
+    uploaded_total = embed_and_upload(chunk1, start_idx=0)
 
     print("\nUploading second batch (Chunk 2)...")
-    embed_and_upload(chunk2, start_idx=3200)
+    uploaded_total += embed_and_upload(chunk2, start_idx=3200)
 
     if chunk3 is not None:
         print("\nUploading third batch (Chunk 3)...")
-        embed_and_upload(chunk3, start_idx=6400)
+        uploaded_total += embed_and_upload(chunk3, start_idx=6400)
 
     print("\nAll embeddings uploaded successfully!")
     print("=" * 60)
-    
+
     # Update SiteConfig to mark upload as complete
     try:
         from app.models import SiteConfig
@@ -292,6 +292,11 @@ def update_pinecone_embeddings(file_path=None, index_name=None):
             print(f"   You can now query this index for scholarships")
     except Exception as e:
         print(f"⚠️  Warning: Could not update SiteConfig status: {e}")
+
+    return {
+        "total_rows": len(df),
+        "rows_uploaded": uploaded_total,
+    }
 
 
 
