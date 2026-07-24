@@ -487,7 +487,12 @@ def send_otp_email(application, recipient_email):
             recipient_list=[recipient_email]
         )
     except Exception as e:
-        raise
+        print(f"❌ SMTP error sending OTP email to {recipient_email}: {e}")
+        if language == 'en':
+            err_msg = "Failed to send verification email due to a mail delivery error. Please try again later."
+        else:
+            err_msg = "Det gick inte att skicka verifieringsmeddelandet på grund av ett e-postfel. Vänligen försök igen senare."
+        raise ValidationError({"error": err_msg})
 
 
 @api_view(['post'])
@@ -1232,12 +1237,16 @@ def contact_us(request):
     subject = f"Contact Form Submission from {name}"
     message_text = f"Name: {name}\nEmail: {email}\n\nMessage:\n{message_body}"
 
-    send_mail(
-        subject=subject,
-        message=message_text,
-        from_email=settings.EMAIL_HOST_USER,
-        recipient_list=["kontakt@stipendieportalen.se"]
-    )
+    try:
+        send_mail(
+            subject=subject,
+            message=message_text,
+            from_email=settings.EMAIL_HOST_USER,
+            recipient_list=["kontakt@stipendieportalen.se"]
+        )
+    except Exception as e:
+        print(f"❌ SMTP error sending contact email: {e}")
+        raise ValidationError({"error": "Failed to send message due to a mail delivery error. Please try again later."})
 
     return Response({"message": "Message sent successfully"})
 

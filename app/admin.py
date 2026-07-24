@@ -1,12 +1,13 @@
 #server code 
 
 from django.contrib import admin
-from django.urls import reverse
-from django.shortcuts import redirect
+from django.urls import reverse, path
+from django.shortcuts import redirect, get_object_or_404
+from django.http import HttpResponseRedirect
+from django.utils.html import format_html
 from django.db import models
  
 # admin.py
-from django.contrib import admin
 from .models import (
     SiteConfig, DatasetUpload, FAQ, ScholarshipApplicant,
     Review, Coupon, PreDefinedScholarship, EmailTemplate
@@ -130,7 +131,7 @@ class DatasetUploadAdmin(admin.ModelAdmin):
     list_display = (
         'dataset_index_name', 'use_default_dataset', 'pinecone_updated',
         'upload_status', 'upload_progress', 'rows_uploaded',
-        'total_rows', 'last_uploaded_at'
+        'total_rows', 'last_uploaded_at', 'reset_upload_action'
     )
     readonly_fields = (
         'pinecone_updated', 'upload_in_progress', 'upload_status',
@@ -166,12 +167,52 @@ class DatasetUploadAdmin(admin.ModelAdmin):
         }),
     )
     search_fields = ('dataset_index_name',)
-    list_filter = ('use_default_dataset', 'pinecone_updated', 'upload_status')
+    list_filter = ('use_default_dataset', 'pinecone_updated', 'upload_status', 'upload_in_progress')
+    actions = ['reset_stuck_upload']
+
+    def reset_upload_action(self, obj):
+        if obj.upload_in_progress:
+            url = reverse('admin:datasetupload-reset-upload', args=[obj.pk])
+            return format_html(
+                '<a class="button" style="background-color: #ba2121; color: white; padding: 3px 8px; border-radius: 3px; text-decoration: none;" href="{}">Reset Flag</a>',
+                url
+            )
+        return "-"
+    reset_upload_action.short_description = "Action"
+
+    @admin.action(description="Reset stuck upload status (allow re-upload)")
+    def reset_stuck_upload(self, request, queryset):
+        updated = queryset.filter(upload_in_progress=True).update(
+            upload_in_progress=False,
+            upload_status='failed',
+            upload_error_message='Reset manually by admin.'
+        )
+        self.message_user(
+            request,
+            f"Successfully reset upload status for {updated} dataset record(s)."
+        )
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path('<path:object_id>/reset-upload/', self.admin_site.admin_view(self.process_reset_upload), name='datasetupload-reset-upload'),
+        ]
+        return custom_urls + urls
+
+    def process_reset_upload(self, request, object_id, *args, **kwargs):
+        obj = get_object_or_404(DatasetUpload, pk=object_id)
+        obj.upload_in_progress = False
+        obj.upload_status = 'failed'
+        obj.upload_error_message = 'Reset manually by admin.'
+        obj.save(update_fields=['upload_in_progress', 'upload_status', 'upload_error_message'])
+        self.message_user(request, f"Upload status for dataset ID #{obj.pk} has been reset.")
+        return HttpResponseRedirect(request.META.get('HTTP_REFERER', '../'))
 
     def get_readonly_fields(self, request, obj=None):
-        if obj is None:
-            return self.readonly_fields
-        return self.readonly_fields
+        fields = list(self.readonly_fields)
+        if obj and obj.upload_in_progress:
+            fields.remove('upload_in_progress')
+        return fields
 
 
 @admin.register(PreDefinedScholarship)

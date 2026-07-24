@@ -45,9 +45,10 @@ USER app
 
 EXPOSE 8000
 
-# Entrypoint: migrate + collectstatic, then start gunicorn
+# Entrypoint: migrate + createcachetable + collectstatic, then start gunicorn
 CMD ["sh", "-c", "\
     python manage.py migrate --noinput && \
+    python manage.py createcachetable && \
     python manage.py collectstatic --noinput && \
     gunicorn STEPO_BACKEND.wsgi:application \
         --bind 0.0.0.0:8000 \
