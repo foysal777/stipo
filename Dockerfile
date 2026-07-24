@@ -5,6 +5,10 @@ WORKDIR /app
 
 # Install build tools for compiled packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    python3-dev \
+    pkg-config \
+    libcairo2-dev \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -26,6 +30,7 @@ WORKDIR /app
 # Runtime-only system libs
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
+    libcairo2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder stage
