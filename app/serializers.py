@@ -81,6 +81,10 @@ SUBJECT_TRANSLATIONS_REVERSE = {v: k for k, v in SUBJECT_TRANSLATIONS.items()}
 
 
 class ReviewSerializer(serializers.ModelSerializer):
+    reviewer_name = serializers.CharField(required=False, allow_blank=True, default="")
+    reviewer_gender = serializers.CharField(required=False, allow_blank=True, default="")
+    profile_icon = serializers.CharField(required=False, allow_blank=True, default="")
+
     class Meta:
         model = Review
         fields = '__all__'

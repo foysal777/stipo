@@ -67,7 +67,9 @@ class FAQ_Admin(admin.ModelAdmin):
  
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
-    pass
+    list_display = ('reviewer_name', 'reviewer_gender', 'profile_icon', 'email', 'stars')
+    search_fields = ('reviewer_name', 'email', 'description')
+    list_filter = ('reviewer_gender', 'stars')
  
  
 @admin.register(ScholarshipApplicant)

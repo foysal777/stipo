@@ -1133,12 +1133,14 @@ class ReviewView(APIView):
             "reviews": [
                 {
                     # "email": review.email,
+                    "reviewer_name": review.reviewer_name,
+                    "reviewer_gender": review.reviewer_gender,
+                    "profile_icon": review.get_profile_icon(),
                     "stars": review.stars,
                     "description": review.description
                 } for review in reviews
             ]
         })
-        pass
 
 
     @extend_schema(request=ReviewSerializer)
@@ -1146,6 +1148,9 @@ class ReviewView(APIView):
         email = request.data.get('email')
         description = request.data.get('description')
         stars = request.data.get('stars')
+        reviewer_name = request.data.get('reviewer_name', '')
+        reviewer_gender = request.data.get('reviewer_gender', '')
+        profile_icon = request.data.get('profile_icon', '')
 
         review = Review.objects.filter(email=email).first()
         if review:
@@ -1154,10 +1159,16 @@ class ReviewView(APIView):
         if not isinstance(stars, int):
             raise ValidationError({"error": "stars must be an integer."})
 
-        if not 0<stars<6:
+        if not 0 < stars < 6:
             raise ValidationError({"error": "stars must be between 1 and 5"}) 
 
+        if not profile_icon:
+            profile_icon = Review.get_profile_icon_for_gender(reviewer_gender)
+
         Review.objects.create(
+            reviewer_name=reviewer_name or "",
+            reviewer_gender=reviewer_gender or "",
+            profile_icon=profile_icon,
             email=email,
             description=description,
             stars=stars

@@ -394,9 +394,44 @@ class FAQ(models.Model):
         return self.question[:50] + ('...' if len(self.question) > 50 else '')
 
 class Review(models.Model):
+    GENDER_CHOICES = (
+        ('male', 'Male'),
+        ('female', 'Female'),
+        ('Non-binary', 'Non-binary'),
+        ('prefer to say', 'Prefer to say'),
+        ('others', 'Others'),
+    )
+
+    reviewer_name = models.CharField(max_length=255, blank=True, default="")
+    reviewer_gender = models.CharField(max_length=50, choices=GENDER_CHOICES, blank=True, default="")
+    profile_icon = models.CharField(max_length=255, blank=True, default="")
     email = models.EmailField()
     description = models.TextField()
     stars = models.SmallIntegerField()
+
+    @staticmethod
+    def get_profile_icon_for_gender(gender):
+        if not gender:
+            return "account.png"
+        g = str(gender).strip().lower()
+        if g in ["male", "man", "m"]:
+            return "male.png"
+        elif g in ["female", "woman", "kvinna", "f"]:
+            return "female.png"
+        return "account.png"
+
+    def get_profile_icon(self):
+        if self.profile_icon:
+            return self.profile_icon
+        return self.get_profile_icon_for_gender(self.reviewer_gender)
+
+    def save(self, *args, **kwargs):
+        if not self.profile_icon:
+            self.profile_icon = self.get_profile_icon_for_gender(self.reviewer_gender)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.reviewer_name or self.email} - {self.stars} stars"
 
 import random
 import string
