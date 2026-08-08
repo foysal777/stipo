@@ -398,7 +398,7 @@ class Review(models.Model):
         ('male', 'Male'),
         ('female', 'Female'),
         ('Non-binary', 'Non-binary'),
-        ('prefer to say', 'Prefer to say'),
+        ('prefer not to say', 'Prefer not to say'),
         ('others', 'Others'),
     )
 
