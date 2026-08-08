@@ -1145,27 +1145,38 @@ class ReviewView(APIView):
 
     @extend_schema(request=ReviewSerializer)
     def post(self, request):
-        email = request.data.get('email')
-        description = request.data.get('description')
-        stars = request.data.get('stars')
-        reviewer_name = request.data.get('reviewer_name', '')
-        reviewer_gender = request.data.get('reviewer_gender', '')
-        profile_icon = request.data.get('profile_icon', '')
+        email = (request.data.get('email') or request.data.get('user_email') or '').strip()
+        description = (request.data.get('description') or request.data.get('comment') or request.data.get('review') or request.data.get('message') or request.data.get('feedback') or '').strip()
+        stars = request.data.get('stars') if request.data.get('stars') is not None else (request.data.get('rating') if request.data.get('rating') is not None else request.data.get('star'))
+        reviewer_name = (request.data.get('reviewer_name') or request.data.get('name') or request.data.get('full_name') or '').strip()
+        reviewer_gender = (request.data.get('reviewer_gender') or request.data.get('gender') or '').strip()
+        profile_icon = (request.data.get('profile_icon') or '').strip()
 
-        review = Review.objects.filter(email=email).first()
+        if not email:
+            raise ValidationError({"error": "email is required."})
+
+        if not description:
+            raise ValidationError({"error": "description is required."})
+
+        if stars is None or stars == "":
+            raise ValidationError({"error": "stars is required."})
+
+        try:
+            stars = int(stars)
+        except (ValueError, TypeError):
+            raise ValidationError({"error": "stars must be an integer between 1 and 5."})
+
+        if not 1 <= stars <= 5:
+            raise ValidationError({"error": "stars must be between 1 and 5."})
+
+        review = Review.objects.filter(email__iexact=email).first()
         if review:
             raise ValidationError({"error": "Review with the same email already exists."})
-
-        if not isinstance(stars, int):
-            raise ValidationError({"error": "stars must be an integer."})
-
-        if not 0 < stars < 6:
-            raise ValidationError({"error": "stars must be between 1 and 5"}) 
 
         if not profile_icon:
             profile_icon = Review.get_profile_icon_for_gender(reviewer_gender)
 
-        Review.objects.create(
+        new_review = Review.objects.create(
             reviewer_name=reviewer_name or "",
             reviewer_gender=reviewer_gender or "",
             profile_icon=profile_icon,
@@ -1174,8 +1185,16 @@ class ReviewView(APIView):
             stars=stars
         )
         return Response({
-            "error": "review submitted."
-        })
+            "message": "Review submitted successfully.",
+            "error": "review submitted.",
+            "review": {
+                "reviewer_name": new_review.reviewer_name,
+                "reviewer_gender": new_review.reviewer_gender,
+                "profile_icon": new_review.get_profile_icon(),
+                "stars": new_review.stars,
+                "description": new_review.description
+            }
+        }, status=status.HTTP_201_CREATED)
 
 @api_view(['get'])
 def faq_list(request):

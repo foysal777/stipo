@@ -24,7 +24,7 @@ print("\n\nDEBUG REPORT DIR: ", BASE_DIR)
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 't')
 
 ALLOWED_HOSTS = [
     'stipendieportalen.se',
@@ -32,21 +32,20 @@ ALLOWED_HOSTS = [
     'app.stipendieportalen.se',
     'localhost',
     '127.0.0.1',
+    '.trycloudflare.com',
+    '.ngrok-free.app',
+    '*',
 ]
-# CORS_ALLOW_ALL_ORIGINS = True
 
-CORS_ALLOW_ALL_ORIGINS = False 
+CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOWED_ORIGINS = [ 
-
     'https://stipendieportalen.se', 
-
     'https://www.stipendieportalen.se', 
-
     'https://app.stipendieportalen.se', 
-
+    'http://localhost:3000',
+    'http://localhost:5173',
 ] 
-
 
 CORS_ALLOW_HEADERS = (
     "accept",
@@ -62,6 +61,10 @@ CSRF_TRUSTED_ORIGINS = [
     'https://stipendieportalen.se',
     'https://www.stipendieportalen.se',
     'https://app.stipendieportalen.se',
+    'http://localhost:8000',
+    'http://127.0.0.1:8000',
+    'https://*.trycloudflare.com',
+    'https://*.ngrok-free.app',
 ]
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'send.one.com').strip()
@@ -244,7 +247,7 @@ if os.environ.get('DJANGO_LOCAL_DEV'):
 
 # ── Production Security Settings ─────────────────────────────────────────────
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'False').lower() in ('true', '1', 't')
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
