@@ -32,6 +32,7 @@ ALLOWED_HOSTS = [
     'app.stipendieportalen.se',
     'localhost',
     '127.0.0.1',
+    '.trycloudflare.com',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
@@ -42,6 +43,7 @@ CORS_ALLOWED_ORIGINS = [
     'https://app.stipendieportalen.se', 
     'http://localhost:3000',
     'http://localhost:5173',
+    'http://localhost:5151',
 ] 
 
 CORS_ALLOW_HEADERS = (
@@ -60,8 +62,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://app.stipendieportalen.se',
     'http://localhost:8000',
     'http://127.0.0.1:8000',
+    'http://localhost:5151',
     'https://*.trycloudflare.com',
-    'https://*.ngrok-free.app',
 ]
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'send.one.com').strip()
