@@ -32,12 +32,9 @@ ALLOWED_HOSTS = [
     'app.stipendieportalen.se',
     'localhost',
     '127.0.0.1',
-    '.trycloudflare.com',
-    '.ngrok-free.app',
-    '*',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 
 CORS_ALLOWED_ORIGINS = [ 
     'https://stipendieportalen.se', 
@@ -247,7 +244,7 @@ if os.environ.get('DJANGO_LOCAL_DEV'):
 
 # ── Production Security Settings ─────────────────────────────────────────────
 if not DEBUG:
-    SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'False').lower() in ('true', '1', 't')
+    SECURE_SSL_REDIRECT = os.environ.get('SECURE_SSL_REDIRECT', 'True').lower() in ('true', '1', 't')
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 31536000
