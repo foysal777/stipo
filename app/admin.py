@@ -70,6 +70,7 @@ class ReviewAdmin(admin.ModelAdmin):
     list_display = ('reviewer_name', 'reviewer_gender','email', 'stars')
     search_fields = ('reviewer_name', 'email', 'description')
     list_filter = ('reviewer_gender', 'stars')
+    exclude = ('profile_icon',)
  
  
 @admin.register(ScholarshipApplicant)
