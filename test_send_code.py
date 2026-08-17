@@ -6,7 +6,7 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'STEPO_BACKEND.settings')
 django.setup()
 
-from app.models import ScholarshipApplicant
+from app.models import ScholarshipApplicant, SiteConfig
 from app.views import send_otp_email
 from django.conf import settings
 
@@ -41,7 +41,9 @@ try:
         print("❌ OTP rate limit exceeded. Try again after 1 hour.")
         sys.exit(1)
 
-    applicant.admin_verified = bool(SITE_CONFIG and not SITE_CONFIG.admin_check)
+    site_config = getattr(settings, 'SITE_CONFIG', None) or SiteConfig.objects.first()
+    admin_check_enabled = site_config.admin_check if site_config is not None else True
+    applicant.admin_verified = bool(admin_check_enabled)
     applicant.email_verified = False
     applicant.save()
 

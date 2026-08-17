@@ -23,6 +23,14 @@ def handle_application_save(sender, instance, created, **kwargs):
     The DB record is intentionally preserved so form input data and scholarship
     results remain queryable. Only the PDF binary is discarded.
     """
+    site_config = getattr(settings, 'SITE_CONFIG', None) or SiteConfig.objects.first()
+    admin_check_enabled = site_config.admin_check if site_config is not None else True
+
+    # If admin_check is disabled in Site Settings, do not send any report email
+    if not admin_check_enabled:
+        print(f"Skipping email delivery for {instance.email}: admin_check is disabled in Site Settings.")
+        return
+
     if instance.admin_verified and instance.report_file \
             and instance.email_verified and instance.paid:
 
@@ -108,6 +116,16 @@ from django.db.models.signals import pre_save
 @receiver(post_save, sender=SiteConfig)
 def handle_site_config_save(sender, instance, created, **kwargs):
     settings.SITE_CONFIG = instance
+    if instance.admin_check:
+        # If admin_check is enabled (True), deliver reports to any completed applicants who were waiting
+        pending_applicants = ScholarshipApplicant.objects.filter(
+            admin_verified=False,
+            email_verified=True,
+            paid=True
+        ).exclude(report_file="")
+        for applicant in pending_applicants:
+            applicant.admin_verified = True
+            applicant.save()
 
 
 @receiver(pre_save, sender=DatasetUpload)

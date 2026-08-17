@@ -228,3 +228,103 @@ class CookieConsentTests(TestCase):
         self.assertFalse(response.data.get('success'))
         self.assertFalse(response.data.get('consent_given'))
         self.assertFalse(response.data.get('captcha_unblocked'))
+
+
+from app.models import ScholarshipApplicant
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class SiteConfigAdminCheckTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        SiteConfig.objects.all().delete()
+        ScholarshipApplicant.objects.all().delete()
+
+    @patch('app.views.send_mail')
+    def test_submit_application_with_admin_check_true(self, mock_send_mail):
+        config = SiteConfig.objects.create(admin_check=True)
+        settings.SITE_CONFIG = config
+
+        response = self.client.post('/app/apply/', {
+            'email': 'user_true@example.com',
+            'name': 'User True',
+            'language': 'sv',
+            'role': 'individual',
+            'purpose_of_funding': 'studies',
+            'municipality': 'Stockholm'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        applicant = ScholarshipApplicant.objects.get(email='user_true@example.com')
+        self.assertTrue(applicant.admin_verified)
+
+    @patch('app.views.send_mail')
+    def test_submit_application_with_admin_check_false(self, mock_send_mail):
+        config = SiteConfig.objects.create(admin_check=False)
+        settings.SITE_CONFIG = config
+
+        response = self.client.post('/app/apply/', {
+            'email': 'user_false@example.com',
+            'name': 'User False',
+            'language': 'sv',
+            'role': 'individual',
+            'purpose_of_funding': 'studies',
+            'municipality': 'Stockholm'
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        applicant = ScholarshipApplicant.objects.get(email='user_false@example.com')
+        self.assertFalse(applicant.admin_verified)
+
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_report_email_sent_when_admin_check_true(self, mock_email_send):
+        config = SiteConfig.objects.create(admin_check=True)
+        settings.SITE_CONFIG = config
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='completed_user@example.com',
+            form_data={'language': 'en'},
+            email_verified=True,
+            paid=True,
+            admin_verified=True,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+        self.assertTrue(mock_email_send.called)
+
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_report_email_blocked_when_admin_check_false(self, mock_email_send):
+        config = SiteConfig.objects.create(admin_check=False)
+        settings.SITE_CONFIG = config
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='blocked_user@example.com',
+            form_data={'language': 'en'},
+            email_verified=True,
+            paid=True,
+            admin_verified=False,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+        self.assertFalse(mock_email_send.called)
+
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_site_config_save_releases_pending_applicants_when_admin_check_becomes_true(self, mock_email_send):
+        config = SiteConfig.objects.create(admin_check=False)
+        settings.SITE_CONFIG = config
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='waiting_user@example.com',
+            form_data={'language': 'sv'},
+            email_verified=True,
+            paid=True,
+            admin_verified=False,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+        self.assertFalse(mock_email_send.called)
+
+        # Toggle admin_check to True
+        config.admin_check = True
+        config.save()
+
+        applicant.refresh_from_db()
+        self.assertTrue(applicant.admin_verified)
+        self.assertTrue(mock_email_send.called)
+

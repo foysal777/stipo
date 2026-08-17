@@ -5,7 +5,6 @@ from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
 import time
 from tiktoken import get_encoding

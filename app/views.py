@@ -527,7 +527,9 @@ def submit_application(request):
             "form_data": form_data
         }
     )
-    application.admin_verified = bool(SITE_CONFIG and not SITE_CONFIG.admin_check)
+    site_config = getattr(settings, 'SITE_CONFIG', None) or SiteConfig.objects.first()
+    admin_check_enabled = site_config.admin_check if site_config is not None else True
+    application.admin_verified = bool(admin_check_enabled)
     application.email_verified = False
     
     application.generate_new_otp()

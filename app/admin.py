@@ -33,9 +33,9 @@ class SiteConfigAdmin(admin.ModelAdmin):
         return redirect(reverse(f'admin:{app_label}_{model_name}_add'))
 
     fieldsets = (
-        ('System Settings', {
+        ('Site Settings', {
             'fields': ('admin_check',),
-            'description': 'Basic system configuration'
+            'description': 'Basic site configuration: Control whether report emails are sent to applicants.'
         }),
         ('Custom LLM Filter Prompt - Individual Users', {
             'fields': ('use_default_query_filter_individual', 'custom_query_prompt_individual',),

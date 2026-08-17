@@ -78,7 +78,11 @@ class SiteConfig(models.Model):
     #     default=0
     # )
 
-    admin_check = models.BooleanField(default=True)
+    admin_check = models.BooleanField(
+        default=True,
+        verbose_name="Admin Check (Send Report Emails)",
+        help_text="If checked (True), applicants will receive report emails when application is processed. If unchecked (False), no emails will be sent."
+    )
 
     query_template = models.TextField(
         verbose_name="LLM filter system prompt",
