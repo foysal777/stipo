@@ -497,8 +497,6 @@ def send_otp_email(application, recipient_email):
 
 @api_view(['post'])
 def submit_application(request):
-    SITE_CONFIG = settings.SITE_CONFIG
-
     email = request.data.get('email')
     if email:
         email = str(email).strip().lower()
@@ -527,7 +525,7 @@ def submit_application(request):
             "form_data": form_data
         }
     )
-    site_config = getattr(settings, 'SITE_CONFIG', None) or SiteConfig.objects.first()
+    site_config = SiteConfig.objects.first()
     admin_check_enabled = site_config.admin_check if site_config is not None else True
     application.admin_verified = bool(admin_check_enabled)
     application.email_verified = False

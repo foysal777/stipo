@@ -23,7 +23,7 @@ def handle_application_save(sender, instance, created, **kwargs):
     The DB record is intentionally preserved so form input data and scholarship
     results remain queryable. Only the PDF binary is discarded.
     """
-    site_config = getattr(settings, 'SITE_CONFIG', None) or SiteConfig.objects.first()
+    site_config = SiteConfig.objects.first()
     admin_check_enabled = site_config.admin_check if site_config is not None else True
 
     # If admin_check is disabled in Site Settings, do not send any report email

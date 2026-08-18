@@ -328,3 +328,24 @@ class SiteConfigAdminCheckTests(TestCase):
         self.assertTrue(applicant.admin_verified)
         self.assertTrue(mock_email_send.called)
 
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_live_db_read_ignores_stale_cached_settings_site_config(self, mock_email_send):
+        # Database has admin_check=False
+        SiteConfig.objects.create(admin_check=False)
+
+        # Simulate a stale Gunicorn worker cache where settings.SITE_CONFIG is True
+        stale_config = SiteConfig(admin_check=True)
+        settings.SITE_CONFIG = stale_config
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='stale_worker_user@example.com',
+            form_data={'language': 'en'},
+            email_verified=True,
+            paid=True,
+            admin_verified=True,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+        # Should not send email because DB has admin_check=False
+        self.assertFalse(mock_email_send.called)
+
+

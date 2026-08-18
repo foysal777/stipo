@@ -41,7 +41,7 @@ try:
         print("❌ OTP rate limit exceeded. Try again after 1 hour.")
         sys.exit(1)
 
-    site_config = getattr(settings, 'SITE_CONFIG', None) or SiteConfig.objects.first()
+    site_config = SiteConfig.objects.first()
     admin_check_enabled = site_config.admin_check if site_config is not None else True
     applicant.admin_verified = bool(admin_check_enabled)
     applicant.email_verified = False
