@@ -984,8 +984,8 @@ def is_valid_domain(url):
 
 @api_view(['post'])
 def generate_payment_link(request, email, method):
-    # email = request.data.get('email')
-    if method not in ['klarna', 'paypal', 'card']:
+    method_lower = str(method).lower()
+    if method_lower not in ['klarna', 'paypal', 'card', 'coupon', 'free']:
         raise ValidationError({"error": "invalid payment method."})
     coupon = request.data.get('coupon_code')
     discount = 0
@@ -1038,8 +1038,6 @@ def generate_payment_link(request, email, method):
             "error": "you have already paid."
         })
 
-    stripe.api_key = os.environ['STRIPE_SECRET_KEY']
-    
     # Detect study level for accurate PhD pricing (handles Swedish terms like "Doktorsexamen")
     study_level = application.form_data.get('study_level', '').lower()
     if any(t in study_level for t in ['phd', 'doctoral', 'doktorand', 'forskarutbildning', 'doktorsexamen', 'licentiat']):
@@ -1060,6 +1058,21 @@ def generate_payment_link(request, email, method):
         price = ORG_PRICE
 
     price = price - price*(discount/100)
+
+    # 100% discount / free coupon order - mark as paid immediately and trigger report delivery
+    if price <= 0:
+        application.paid = True
+        application.save()
+        return Response({
+            "payment_link": success_url,
+            "free": True,
+            "msg": "Payment completed via coupon."
+        })
+
+    if method_lower not in ['klarna', 'paypal', 'card']:
+        raise ValidationError({"error": "invalid payment method."})
+
+    stripe.api_key = os.environ['STRIPE_SECRET_KEY']
     session = stripe.checkout.Session.create(
       success_url=success_url,
       cancel_url=cancel_url,
@@ -1075,7 +1088,7 @@ def generate_payment_link(request, email, method):
       }],
       mode="payment",
       # payment_method_types=["klarna"],
-      payment_method_types=[method],
+      payment_method_types=[method_lower],
       metadata={
         "email": email
       }

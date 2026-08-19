@@ -349,3 +349,104 @@ class SiteConfigAdminCheckTests(TestCase):
         self.assertFalse(mock_email_send.called)
 
 
+from app.models import Coupon
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class CouponPaymentTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        SiteConfig.objects.all().delete()
+        ScholarshipApplicant.objects.all().delete()
+        Coupon.objects.all().delete()
+
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_100_percent_coupon_marks_applicant_paid_and_triggers_email(self, mock_email_send):
+        SiteConfig.objects.create(admin_check=True)
+        coupon = Coupon.objects.create(code='FREE100', discount=100, is_active=True)
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='freeuser@example.com',
+            form_data={'language': 'en', 'role': 'individual', 'study_level': 'bachelor'},
+            email_verified=True,
+            paid=False,
+            admin_verified=True,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+
+        response = self.client.post('/app/freeuser@example.com/card/pay/', {
+            'coupon_code': 'FREE100',
+            'success_url': 'http://localhost:3000/success',
+            'cancel_url': 'http://localhost:3000/cancel',
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('free'))
+        self.assertEqual(response.data.get('payment_link'), 'http://localhost:3000/success')
+
+        applicant.refresh_from_db()
+        self.assertTrue(applicant.paid)
+        self.assertTrue(mock_email_send.called)
+
+        coupon.refresh_from_db()
+        self.assertEqual(coupon.times_used, 1)
+
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_100_percent_coupon_with_method_free_or_coupon(self, mock_email_send):
+        SiteConfig.objects.create(admin_check=True)
+        coupon = Coupon.objects.create(code='GIFT100', discount=100, is_active=True)
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='giftuser@example.com',
+            form_data={'language': 'sv', 'role': 'individual'},
+            email_verified=True,
+            paid=False,
+            admin_verified=True,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+
+        response = self.client.post('/app/giftuser@example.com/coupon/pay/', {
+            'coupon_code': 'GIFT100',
+            'success_url': 'http://localhost:3000/success',
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('free'))
+
+        applicant.refresh_from_db()
+        self.assertTrue(applicant.paid)
+        self.assertTrue(mock_email_send.called)
+
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_100_percent_coupon_with_admin_check_false_holds_until_release(self, mock_email_send):
+        config = SiteConfig.objects.create(admin_check=False)
+        Coupon.objects.create(code='HOLD100', discount=100, is_active=True)
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='helduser@example.com',
+            form_data={'language': 'sv', 'role': 'individual'},
+            email_verified=True,
+            paid=False,
+            admin_verified=False,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+
+        response = self.client.post('/app/helduser@example.com/card/pay/', {
+            'coupon_code': 'HOLD100',
+            'success_url': 'http://localhost:3000/success',
+        }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        applicant.refresh_from_db()
+        self.assertTrue(applicant.paid)
+        self.assertFalse(mock_email_send.called)
+
+        # Release when admin enables admin_check
+        config.admin_check = True
+        config.save()
+
+        applicant.refresh_from_db()
+        self.assertTrue(applicant.admin_verified)
+        self.assertTrue(mock_email_send.called)
+
+
+
