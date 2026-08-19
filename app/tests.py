@@ -1,3 +1,4 @@
+import json
 from django.test import TestCase, override_settings
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -447,6 +448,88 @@ class CouponPaymentTests(TestCase):
         applicant.refresh_from_db()
         self.assertTrue(applicant.admin_verified)
         self.assertTrue(mock_email_send.called)
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class StripePaymentWebhookTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        SiteConfig.objects.all().delete()
+        ScholarshipApplicant.objects.all().delete()
+
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_stripe_webhook_checkout_completed_marks_paid_and_emails(self, mock_email_send):
+        SiteConfig.objects.create(admin_check=True)
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='paidcustomer@example.com',
+            form_data={'language': 'en', 'role': 'individual'},
+            email_verified=True,
+            paid=False,
+            admin_verified=True,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+
+        event_payload = {
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_test_12345",
+                    "metadata": {
+                        "email": "paidcustomer@example.com"
+                    },
+                    "payment_status": "paid"
+                }
+            }
+        }
+
+        # Test webhook without secret configured (or in dev mode)
+        with patch.dict('os.environ', {'STRIPE_WEBHOOK_SECRET': ''}):
+            response = self.client.post(
+                '/app/payment_callback/',
+                data=json.dumps(event_payload),
+                content_type='application/json'
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        applicant.refresh_from_db()
+        self.assertTrue(applicant.paid)
+        self.assertTrue(mock_email_send.called)
+
+    @patch('stripe.checkout.Session.retrieve')
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_verify_payment_session_synchronous_fallback(self, mock_email_send, mock_session_retrieve):
+        SiteConfig.objects.create(admin_check=True)
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='synccustomer@example.com',
+            form_data={'language': 'sv', 'role': 'individual'},
+            email_verified=True,
+            paid=False,
+            admin_verified=True,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+
+        mock_session_retrieve.return_value = {
+            "id": "cs_test_sync_999",
+            "payment_status": "paid",
+            "metadata": {
+                "email": "synccustomer@example.com"
+            }
+        }
+
+        with patch.dict('os.environ', {'STRIPE_SECRET_KEY': 'sk_test_123'}):
+            response = self.client.post('/app/verify_payment/', {
+                'session_id': 'cs_test_sync_999'
+            }, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('paid'))
+
+        applicant.refresh_from_db()
+        self.assertTrue(applicant.paid)
+        self.assertTrue(mock_email_send.called)
+
 
 
 

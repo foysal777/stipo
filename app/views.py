@@ -15,12 +15,17 @@ from django.core.mail import send_mail
 from django.core.files import File
 from django.db import models
 
+import logging
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
+from rest_framework.permissions import AllowAny
 from rest_framework.generics import get_object_or_404
 from rest_framework.exceptions import ValidationError
 from rest_framework.throttling import AnonRateThrottle
+
+logger = logging.getLogger(__name__)
 
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
 from drf_spectacular.types import OpenApiTypes
@@ -1073,9 +1078,14 @@ def generate_payment_link(request, email, method):
         raise ValidationError({"error": "invalid payment method."})
 
     stripe.api_key = os.environ['STRIPE_SECRET_KEY']
+    session_success_url = success_url
+    if "{CHECKOUT_SESSION_ID}" not in session_success_url:
+        session_success_url = f"{session_success_url}{'&' if '?' in session_success_url else '?'}session_id={{CHECKOUT_SESSION_ID}}"
+
     session = stripe.checkout.Session.create(
-      success_url=success_url,
+      success_url=session_success_url,
       cancel_url=cancel_url,
+      customer_email=email,
       line_items=[{
         "price_data":{
             "currency": "sek",
@@ -1098,42 +1108,114 @@ def generate_payment_link(request, email, method):
     })
 
 
-def handle_checkout_session_complete(event):
-    metadata = event['data']['object']['metadata']
+def handle_checkout_session_complete(event_or_session):
+    if isinstance(event_or_session, dict) and 'data' in event_or_session:
+        session = event_or_session['data'].get('object', {})
+    else:
+        session = event_or_session if isinstance(event_or_session, dict) else getattr(event_or_session, '__dict__', {})
 
+    metadata = session.get('metadata') or {}
     email = metadata.get('email')
-    # subscription_type = metadata.get('subscription_type')
 
-    application = get_object_or_404(ScholarshipApplicant, email=email)
+    if not email:
+        email = session.get('customer_email') or (session.get('customer_details') or {}).get('email')
 
-    application.paid = True
-    application.save()
-    return Response({"msg": "payment accepted"})
+    if not email:
+        logger.error(f"Stripe checkout completed but no email found in session {session.get('id')}")
+        return Response({"error": "no email in session"}, status=status.HTTP_400_BAD_REQUEST)
+
+    email = str(email).strip().lower()
+
+    application = ScholarshipApplicant.objects.filter(email__iexact=email).first()
+    if not application:
+        logger.error(f"Applicant not found for email: {email}")
+        return Response({"error": "applicant not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not application.paid:
+        application.paid = True
+        application.save()
+        logger.info(f"Payment marked as completed for {email}")
+
+    return Response({"msg": "payment accepted", "paid": True})
 
 
+@csrf_exempt
 @api_view(['post'])
+@permission_classes([AllowAny])
+@authentication_classes([])
 def stripe_payment_webhook(request):
-    event = None
     payload = request.body
-    sig_header = request.headers.get('STRIPE_SIGNATURE')
-    if not sig_header:
-        raise ValidationError({"error": "validation signature not found"})
+    sig_header = request.headers.get('STRIPE_SIGNATURE') or request.META.get('HTTP_STRIPE_SIGNATURE')
 
-    try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, os.environ['STRIPE_WEBHOOK_SECRET'],
-        )
+    webhook_secret = os.environ.get('STRIPE_WEBHOOK_SECRET', '').strip()
 
-    except ValueError as e:
-        return Response({'error': "invalid payload"}, status=400)
-    except stripe.error.SignatureVerificationError as e:
-        # Invalid signature
-        return Response({'error': "invalid signature"}, status=status.HTTP_400_BAD_REQUEST)
+    if not webhook_secret:
+        # Fallback if webhook secret is not set in environment
+        logger.warning("STRIPE_WEBHOOK_SECRET is not set in environment. Parsing event directly from payload.")
+        try:
+            event = json.loads(payload)
+        except Exception as e:
+            return Response({'error': "invalid json payload"}, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        if not sig_header:
+            logger.error("Stripe webhook received without STRIPE_SIGNATURE header.")
+            raise ValidationError({"error": "validation signature not found"})
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, webhook_secret,
+            )
+        except ValueError as e:
+            logger.error(f"Stripe webhook payload error: {e}")
+            return Response({'error': "invalid payload"}, status=status.HTTP_400_BAD_REQUEST)
+        except stripe.error.SignatureVerificationError as e:
+            logger.error(f"Stripe webhook signature error: {e}")
+            return Response({'error': f"invalid signature: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if event['type'] == 'checkout.session.completed':
+    if event.get('type') == 'checkout.session.completed':
         return handle_checkout_session_complete(event)
 
-    return Response("")
+    return Response({"status": "received"})
+
+
+@csrf_exempt
+@api_view(['post'])
+@permission_classes([AllowAny])
+def verify_payment_session(request):
+    """
+    Synchronously verify payment with Stripe using the session_id or applicant email.
+    Acts as a fail-safe fallback if the asynchronous webhook is delayed, dropped, or misconfigured.
+    """
+    session_id = request.data.get('session_id')
+    email = request.data.get('email')
+
+    if not session_id and not email:
+        raise ValidationError({"error": "session_id or email is required"})
+
+    stripe.api_key = os.environ.get('STRIPE_SECRET_KEY')
+
+    if session_id:
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+            if session.get('payment_status') == 'paid':
+                return handle_checkout_session_complete(session)
+            else:
+                return Response({
+                    "paid": False,
+                    "status": session.get('payment_status'),
+                    "message": "Payment not completed yet"
+                })
+        except Exception as e:
+            logger.error(f"Failed to retrieve Stripe session {session_id}: {e}")
+            raise ValidationError({"error": f"Failed to retrieve Stripe session: {str(e)}"})
+
+    if email:
+        email = str(email).strip().lower()
+        application = get_object_or_404(ScholarshipApplicant, email__iexact=email)
+        return Response({
+            "paid": application.paid,
+            "email_verified": application.email_verified,
+            "admin_verified": application.admin_verified
+        })
 
 
 class ReviewView(APIView):
