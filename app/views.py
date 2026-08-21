@@ -1109,19 +1109,43 @@ def generate_payment_link(request, email, method):
 
 
 def handle_checkout_session_complete(event_or_session):
-    if isinstance(event_or_session, dict) and 'data' in event_or_session:
-        session = event_or_session['data'].get('object', {})
+    session = {}
+    if isinstance(event_or_session, dict):
+        if 'data' in event_or_session:
+            session = event_or_session['data'].get('object', {})
+        else:
+            session = event_or_session
+    elif hasattr(event_or_session, 'get') or hasattr(event_or_session, 'data'):
+        if hasattr(event_or_session, 'data') and hasattr(event_or_session.data, 'object'):
+            session = event_or_session.data.object
+        elif 'data' in event_or_session:
+            session = event_or_session['data'].get('object', {})
+        else:
+            session = event_or_session
     else:
-        session = event_or_session if isinstance(event_or_session, dict) else getattr(event_or_session, '__dict__', {})
+        session = getattr(event_or_session, '__dict__', {})
 
-    metadata = session.get('metadata') or {}
-    email = metadata.get('email')
+    metadata = {}
+    if isinstance(session, dict) or hasattr(session, 'get'):
+        metadata = session.get('metadata') or {}
+    elif hasattr(session, 'metadata'):
+        metadata = getattr(session, 'metadata', {}) or {}
+
+    email = None
+    if isinstance(metadata, dict) or hasattr(metadata, 'get'):
+        email = metadata.get('email')
+    elif hasattr(metadata, 'email'):
+        email = getattr(metadata, 'email', None)
 
     if not email:
-        email = session.get('customer_email') or (session.get('customer_details') or {}).get('email')
+        if isinstance(session, dict) or hasattr(session, 'get'):
+            email = session.get('customer_email') or (session.get('customer_details') or {}).get('email')
+        elif hasattr(session, 'customer_email'):
+            email = getattr(session, 'customer_email', None)
 
     if not email:
-        logger.error(f"Stripe checkout completed but no email found in session {session.get('id')}")
+        session_id = session.get('id') if (isinstance(session, dict) or hasattr(session, 'get')) else getattr(session, 'id', 'unknown')
+        logger.error(f"Stripe checkout completed but no email found in session {session_id}")
         return Response({"error": "no email in session"}, status=status.HTTP_400_BAD_REQUEST)
 
     email = str(email).strip().lower()
@@ -1131,10 +1155,14 @@ def handle_checkout_session_complete(event_or_session):
         logger.error(f"Applicant not found for email: {email}")
         return Response({"error": "applicant not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    if not application.paid:
-        application.paid = True
-        application.save()
-        logger.info(f"Payment marked as completed for {email}")
+    try:
+        if not application.paid:
+            application.paid = True
+            application.save()
+            logger.info(f"Payment marked as completed for {email}")
+    except Exception as e:
+        logger.error(f"Failed to update payment status for {email}: {e}", exc_info=True)
+        return Response({"error": f"error updating payment status: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     return Response({"msg": "payment accepted", "paid": True})
 
@@ -1145,7 +1173,7 @@ def handle_checkout_session_complete(event_or_session):
 @authentication_classes([])
 def stripe_payment_webhook(request):
     payload = request.body
-    sig_header = request.headers.get('STRIPE_SIGNATURE') or request.META.get('HTTP_STRIPE_SIGNATURE')
+    sig_header = request.headers.get('Stripe-Signature') or request.headers.get('STRIPE_SIGNATURE') or request.META.get('HTTP_STRIPE_SIGNATURE')
 
     webhook_secret = os.environ.get('STRIPE_WEBHOOK_SECRET', '').strip()
 
@@ -1159,7 +1187,7 @@ def stripe_payment_webhook(request):
     else:
         if not sig_header:
             logger.error("Stripe webhook received without STRIPE_SIGNATURE header.")
-            raise ValidationError({"error": "validation signature not found"})
+            return Response({'error': "validation signature not found"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             event = stripe.Webhook.construct_event(
                 payload, sig_header, webhook_secret,
@@ -1170,11 +1198,24 @@ def stripe_payment_webhook(request):
         except stripe.error.SignatureVerificationError as e:
             logger.error(f"Stripe webhook signature error: {e}")
             return Response({'error': f"invalid signature: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            logger.error(f"Stripe webhook construction error: {e}")
+            return Response({'error': f"webhook processing error: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-    if event.get('type') == 'checkout.session.completed':
-        return handle_checkout_session_complete(event)
+    try:
+        event_type = None
+        if isinstance(event, dict) or hasattr(event, 'get'):
+            event_type = event.get('type')
+        elif hasattr(event, 'type'):
+            event_type = getattr(event, 'type', None)
 
-    return Response({"status": "received"})
+        if event_type == 'checkout.session.completed':
+            return handle_checkout_session_complete(event)
+
+        return Response({"status": "received"})
+    except Exception as e:
+        logger.error(f"Unhandled error processing Stripe webhook: {e}", exc_info=True)
+        return Response({"error": f"internal error processing webhook: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @csrf_exempt

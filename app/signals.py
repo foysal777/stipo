@@ -85,27 +85,34 @@ def handle_application_save(sender, instance, created, **kwargs):
         )
         email_msg.attach_alternative(html_body, "text/html")
 
-        with open(pdf_path, "rb") as pdf:
-            email_msg.attach(report_file_name, pdf.read(), "application/pdf")
-
-        print("SENDING FILE>>>")
-        email_msg.send()
-        print(f"PDF emailed to {instance.email}")
-
-        # --- 2. Delete the physical file from disk immediately ---
         try:
-            _os.remove(pdf_path)
-            print(f"Physical PDF deleted: {pdf_path}")
-        except OSError as exc:
-            print(f"Could not delete physical PDF ({pdf_path}): {exc}")
+            if not _os.path.exists(pdf_path):
+                print(f"Report file path {pdf_path} does not exist for {instance.email}. Skipping email delivery.")
+                return
 
-        # --- 3. Clear report_file field in DB (keep the record with form_data) ---
-        # Use .update() to avoid re-triggering this post_save signal.
-        ScholarshipApplicant.objects.filter(pk=instance.pk).update(
-            report_file="",
-            pdf_created_at=None,
-        )
-        print(f"report_file cleared for {instance.email} — form_data and results retained.")
+            with open(pdf_path, "rb") as pdf:
+                email_msg.attach(report_file_name, pdf.read(), "application/pdf")
+
+            print("SENDING FILE>>>")
+            email_msg.send()
+            print(f"PDF emailed to {instance.email}")
+
+            # --- 2. Delete the physical file from disk immediately ---
+            try:
+                _os.remove(pdf_path)
+                print(f"Physical PDF deleted: {pdf_path}")
+            except OSError as exc:
+                print(f"Could not delete physical PDF ({pdf_path}): {exc}")
+
+            # --- 3. Clear report_file field in DB (keep the record with form_data) ---
+            # Use .update() to avoid re-triggering this post_save signal.
+            ScholarshipApplicant.objects.filter(pk=instance.pk).update(
+                report_file="",
+                pdf_created_at=None,
+            )
+            print(f"report_file cleared for {instance.email} — form_data and results retained.")
+        except Exception as exc:
+            print(f"❌ Error during email delivery/processing for {instance.email}: {exc}")
 
 
 from threading import Thread

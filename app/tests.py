@@ -6,7 +6,7 @@ from unittest.mock import patch
 from rest_framework.test import APIClient
 from rest_framework import status
 from django.urls import reverse
-
+import stripe
 from app.models import SiteConfig
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -495,6 +495,47 @@ class StripePaymentWebhookTests(TestCase):
         applicant.refresh_from_db()
         self.assertTrue(applicant.paid)
         self.assertTrue(mock_email_send.called)
+
+    @patch('stripe.Webhook.construct_event')
+    @patch('app.signals.EmailMultiAlternatives.send')
+    def test_stripe_webhook_with_secret_and_smtp_failure(self, mock_email_send, mock_construct_event):
+        SiteConfig.objects.create(admin_check=True)
+        mock_email_send.side_effect = Exception("SMTP connection refused")
+
+        applicant = ScholarshipApplicant.objects.create(
+            email='secretcustomer@example.com',
+            form_data={'language': 'en', 'role': 'individual'},
+            email_verified=True,
+            paid=False,
+            admin_verified=True,
+            report_file=SimpleUploadedFile('report.pdf', b'%PDF-1.4 dummy content')
+        )
+
+        mock_event = stripe.Event.construct_from({
+            "type": "checkout.session.completed",
+            "data": {
+                "object": {
+                    "id": "cs_test_secret_123",
+                    "metadata": {
+                        "email": "secretcustomer@example.com"
+                    },
+                    "payment_status": "paid"
+                }
+            }
+        }, 'sk_test_dummy')
+        mock_construct_event.return_value = mock_event
+
+        with patch.dict('os.environ', {'STRIPE_WEBHOOK_SECRET': 'whsec_secret_key'}):
+            response = self.client.post(
+                '/app/payment_callback/',
+                data='{}',
+                content_type='application/json',
+                HTTP_STRIPE_SIGNATURE='t=12345,v1=sig_mock'
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        applicant.refresh_from_db()
+        self.assertTrue(applicant.paid)
 
     @patch('stripe.checkout.Session.retrieve')
     @patch('app.signals.EmailMultiAlternatives.send')
